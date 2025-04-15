@@ -16,7 +16,7 @@ import (
 func setupLogging() {
 	mqtt.ERROR = log.New(os.Stderr, "ERROR ", log.LstdFlags)
 	mqtt.CRITICAL = log.New(os.Stderr, "CRITICAL ", log.LstdFlags)
-	mqtt.WARN = log.New(os.Stderr, "WARN ", log.LstdFlags)
+	// mqtt.WARN = log.New(os.Stderr, "WARN ", log.LstdFlags)
 	// mqtt.DEBUG = log.New(os.Stdout, "DEBUG ", log.LstdFlags)
 }
 
@@ -33,6 +33,15 @@ func tlsCfg() *tls.Config {
 }
 
 func sub(client mqtt.Client) {
+	{
+		// Sample subscribe message with the topic `location/1/kiosk/1/sensor1`
+		// Ideally, a different client subscribes with this topic.
+		topic := "location/1/kiosk/1/sensor1"
+		token := client.Subscribe(topic, 1, nil)
+		token.Wait()
+		fmt.Printf("Subscribed to topic %s\n", topic)
+	}
+
 	topic := "location/1/kiosk/config"
 	token := client.Subscribe(topic, 1, nil)
 	token.Wait()
@@ -71,7 +80,7 @@ func main() {
 
 	opts.SetDefaultPublishHandler(
 		func(_ mqtt.Client, msg mqtt.Message) {
-			fmt.Printf("Received message: %s from topic: %s\n", msg.Payload(), msg.Topic())
+			fmt.Printf("Received from topic: %v\n>>\t%s\n", msg.Topic(), msg.Payload())
 		},
 	)
 	opts.OnConnectAttempt = func(_ *url.URL, tlsCfg *tls.Config) *tls.Config {
