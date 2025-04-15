@@ -24,5 +24,11 @@ go.work.sum
 # env file
 .env
 
-# User files
+# User file
 /.idea
+
+# Certificate file
+*.pem
+*.crt
+*.csr
+*.key

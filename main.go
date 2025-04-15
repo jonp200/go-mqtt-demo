@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"time"
 
@@ -19,7 +20,7 @@ func setupLogging() {
 	// mqtt.DEBUG = log.New(os.Stdout, "DEBUG ", log.LstdFlags)
 }
 
-func tlsConfig() *tls.Config {
+func tlsCfg() *tls.Config {
 	certpool := x509.NewCertPool()
 	ca, err := os.ReadFile("emqxsl-ca.crt")
 	if err != nil {
@@ -35,10 +36,17 @@ func sub(client mqtt.Client) {
 	topic := "location/1/kiosk/config"
 	token := client.Subscribe(topic, 1, nil)
 	token.Wait()
-	fmt.Printf("Subscribed to topic %s", topic)
+	fmt.Printf("Subscribed to topic %s\n", topic)
 }
 
 func publish(client mqtt.Client) {
+	{
+		// Sample publish message with the topic `location/1/kiosk/config`.
+		// Ideally, a different client publishes with this topic.
+		token := client.Publish("location/1/kiosk/config", 0, false, `{"enabled":true}`)
+		token.Wait()
+	}
+
 	num := 10
 	for i := 0; i < num; i++ {
 		text := fmt.Sprintf("Message %d", i)
@@ -54,30 +62,35 @@ func main() {
 	}
 	setupLogging()
 
-	var broker = os.Getenv("BROKER_ADDRESS")
-	var port = os.Getenv("BROKER_PORT")
 	opts := mqtt.NewClientOptions()
-	opts.AddBroker(fmt.Sprintf("mqtts://%v:%v", broker, port))
-	opts.SetTLSConfig(tlsConfig())
+	opts.AddBroker(fmt.Sprintf("mqtts://%v:%v", os.Getenv("BROKER_ADDRESS"), os.Getenv("BROKER_PORT")))
+	opts.SetTLSConfig(tlsCfg())
 	opts.SetClientID(os.Getenv("CLIENT_ID"))
 	opts.SetUsername(os.Getenv("CLIENT_USERNAME"))
 	opts.SetPassword(os.Getenv("CLIENT_PASSWORD"))
 
 	opts.SetDefaultPublishHandler(
-		func(client mqtt.Client, msg mqtt.Message) {
+		func(_ mqtt.Client, msg mqtt.Message) {
 			fmt.Printf("Received message: %s from topic: %s\n", msg.Payload(), msg.Topic())
 		},
 	)
-	opts.OnConnect = func(client mqtt.Client) {
+	opts.OnConnectAttempt = func(_ *url.URL, tlsCfg *tls.Config) *tls.Config {
+		fmt.Println("Connecting...")
+		return tlsCfg
+	}
+	opts.OnReconnecting = func(_ mqtt.Client, _ *mqtt.ClientOptions) {
+		fmt.Println("Reconnecting...")
+	}
+	opts.OnConnect = func(_ mqtt.Client) {
 		fmt.Println("Connected")
 	}
-	opts.OnConnectionLost = func(client mqtt.Client, err error) {
-		fmt.Printf("Connect lost: %v", err)
+	opts.OnConnectionLost = func(_ mqtt.Client, err error) {
+		fmt.Printf("Connection lost: %v", err)
 	}
 
 	client := mqtt.NewClient(opts)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
-		panic(token.Error())
+		log.Fatal(token.Error())
 	}
 
 	sub(client)
