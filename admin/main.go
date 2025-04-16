@@ -8,7 +8,6 @@ import (
 	"github.com/labstack/echo/v4"
 	glog "github.com/labstack/gommon/log"
 	"go-mqtt-demo/client"
-	"go-mqtt-demo/helpers"
 	"go-mqtt-demo/logger"
 )
 
@@ -20,13 +19,13 @@ func main() {
 
 	e := echo.New()
 
-	cl := client.New(helpers.RelativePath("emqxsl-ca.crt"))
-	if token := cl.Connect(); token.Wait() && token.Error() != nil {
+	pubClient := client.NewMqtt("emqxsl-ca.crt")
+	if token := pubClient.Connect(); token.Wait() && token.Error() != nil {
 		glog.Fatal(token.Error())
 	}
 
-	e.File("/", helpers.RelativePath("public/index.html"))
-	e.File("/favicon.ico", helpers.RelativePath("images/favicon.ico"))
+	e.File("/", "public/index.html")
+	e.File("/favicon.ico", "images/favicon.ico")
 
 	e.POST(
 		"/publish", func(c echo.Context) error {
@@ -43,7 +42,7 @@ func main() {
 				return echo.NewHTTPError(http.StatusInternalServerError, err)
 			}
 
-			if token := cl.Publish(p.Topic, 0, false, data); token.Wait() && token.Error() != nil {
+			if token := pubClient.Publish(p.Topic, 0, false, data); token.Wait() && token.Error() != nil {
 				return echo.NewHTTPError(http.StatusInternalServerError, err)
 			}
 

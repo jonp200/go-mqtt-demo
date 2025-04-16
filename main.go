@@ -8,7 +8,6 @@ import (
 	"github.com/joho/godotenv"
 	glog "github.com/labstack/gommon/log"
 	"go-mqtt-demo/client"
-	"go-mqtt-demo/helpers"
 	"go-mqtt-demo/logger"
 )
 
@@ -18,7 +17,7 @@ func main() {
 	}
 	logger.Init()
 
-	c := client.New(helpers.RelativePath("emqxsl-ca.crt"))
+	c := client.NewMqtt("emqxsl-ca.crt")
 	if token := c.Connect(); token.Wait() && token.Error() != nil {
 		glog.Fatal(token.Error())
 	}
