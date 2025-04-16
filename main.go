@@ -2,25 +2,25 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/joho/godotenv"
 	glog "github.com/labstack/gommon/log"
 	"go-mqtt-demo/client"
+	"go-mqtt-demo/helpers"
 	"go-mqtt-demo/logger"
 )
 
 func main() {
 	if err := godotenv.Load(); err != nil {
-		log.Fatal("Error loading .env file")
+		glog.Fatal("Error loading .env file")
 	}
 	logger.Init()
 
-	c := client.New("emqxsl-ca.crt")
+	c := client.New(helpers.RelativePath("emqxsl-ca.crt"))
 	if token := c.Connect(); token.Wait() && token.Error() != nil {
-		log.Fatal(token.Error())
+		glog.Fatal(token.Error())
 	}
 
 	func(client mqtt.Client) {

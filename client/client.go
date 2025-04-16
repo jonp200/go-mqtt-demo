@@ -32,20 +32,20 @@ func publishHandler(_ mqtt.Client, msg mqtt.Message) {
 }
 
 func onConnectAttempt(_ *url.URL, tlsCfg *tls.Config) *tls.Config {
-	log.Infof("Connecting...")
+	log.Infof("Connecting to broker...")
 	return tlsCfg
 }
 
 func onReconnecting(_ mqtt.Client, _ *mqtt.ClientOptions) {
-	log.Infof("Reconnecting...")
+	log.Infof("Reconnecting to broker...")
 }
 
 func onConnect(_ mqtt.Client) {
-	log.Infof("Connected")
+	log.Infof("Connected to broker")
 }
 
 func onConnectionLost(_ mqtt.Client, err error) {
-	log.Infof("Connection lost: %v", err)
+	log.Infof("Connection to broker lost: %v", err)
 }
 
 func New(caName string) *Client {

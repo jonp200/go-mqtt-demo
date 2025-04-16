@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Admin MQTT Publisher</title>
+    <style>
+        #content {
+            max-width: fit-content;
+            margin-left: auto;
+            margin-right: auto;
+        }
+    </style>
+</head>
+<body>
+<div id="content">
+    <h1>Admin MQTT Publisher</h1>
+    <form id="mqtt-form">
+        <label for="topic">Topic:</label>
+        <input type="text" id="topic" name="topic" value="location/1/kiosk/config" readonly/><br/><br/>
+
+        <label for="payload">Payload (JSON):</label><br/>
+        <textarea id="payload" name="payload" rows="6" cols="40" required>{ "enabled": true }</textarea><br/><br/>
+
+        <button type="submit">Publish</button>
+    </form>
+    <pre id="result"></pre>
+</div>
+<script>
+    const form = document.getElementById("mqtt-form");
+    const result = document.getElementById("result");
+
+    form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const topic = document.getElementById("topic").value;
+        const payloadText = document.getElementById("payload").value;
+
+        let payload;
+        try {
+            payload = JSON.parse(payloadText);
+        } catch (err) {
+            result.textContent = "Invalid JSON";
+            return;
+        }
+
+        const response = await fetch("http://localhost:9090/publish", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({topic, data: payload}),
+        });
+
+        const responseData = await response.json();
+        result.textContent = JSON.stringify(responseData, null, 2);
+    });
+</script>
+</body>
+</html>
