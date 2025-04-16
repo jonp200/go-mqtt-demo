@@ -1,34 +1,29 @@
 package main
 
 import (
-	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"log"
-	"net/url"
 	"os"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/joho/godotenv"
+	glog "github.com/labstack/gommon/log"
+	"go-mqtt-demo/client"
+	"go-mqtt-demo/logger"
 )
 
 func setupLogging() {
-	mqtt.ERROR = log.New(os.Stderr, "ERROR ", log.LstdFlags)
-	mqtt.CRITICAL = log.New(os.Stderr, "CRITICAL ", log.LstdFlags)
-	// mqtt.WARN = log.New(os.Stderr, "WARN ", log.LstdFlags)
-	// mqtt.DEBUG = log.New(os.Stdout, "DEBUG ", log.LstdFlags)
-}
+	glog.SetHeader("${time_rfc3339} ${level} ${short_file}:${line}")
+	glog.EnableColor()
 
-func tlsCfg() *tls.Config {
-	certpool := x509.NewCertPool()
-	ca, err := os.ReadFile("emqxsl-ca.crt")
-	if err != nil {
-		log.Fatalln(err.Error())
-	}
-	certpool.AppendCertsFromPEM(ca)
-	return &tls.Config{
-		RootCAs: certpool,
+	mqtt.ERROR = logger.Error{}
+	mqtt.CRITICAL = logger.Error{}
+	mqtt.WARN = logger.Warn{}
+
+	if os.Getenv("DEBUG") == "1" {
+		glog.SetLevel(glog.DEBUG)
+		mqtt.DEBUG = logger.Debug{}
 	}
 }
 
@@ -39,13 +34,13 @@ func sub(client mqtt.Client) {
 		topic := "location/1/kiosk/1/sensor1"
 		token := client.Subscribe(topic, 1, nil)
 		token.Wait()
-		fmt.Printf("Subscribed to topic %s\n", topic)
+		glog.Infof("Subscribed to topic %s", topic)
 	}
 
 	topic := "location/1/kiosk/config"
 	token := client.Subscribe(topic, 1, nil)
 	token.Wait()
-	fmt.Printf("Subscribed to topic %s\n", topic)
+	glog.Infof("Subscribed to topic %s", topic)
 }
 
 func publish(client mqtt.Client) {
@@ -56,7 +51,7 @@ func publish(client mqtt.Client) {
 		token.Wait()
 	}
 
-	num := 10
+	const num = 10
 	for i := 0; i < num; i++ {
 		text := fmt.Sprintf("Message %d", i)
 		token := client.Publish("location/1/kiosk/1/sensor1", 0, false, text)
@@ -71,39 +66,13 @@ func main() {
 	}
 	setupLogging()
 
-	opts := mqtt.NewClientOptions()
-	opts.AddBroker(fmt.Sprintf("mqtts://%v:%v", os.Getenv("BROKER_ADDRESS"), os.Getenv("BROKER_PORT")))
-	opts.SetTLSConfig(tlsCfg())
-	opts.SetClientID(os.Getenv("CLIENT_ID"))
-	opts.SetUsername(os.Getenv("CLIENT_USERNAME"))
-	opts.SetPassword(os.Getenv("CLIENT_PASSWORD"))
-
-	opts.SetDefaultPublishHandler(
-		func(_ mqtt.Client, msg mqtt.Message) {
-			fmt.Printf("Received from topic: %v\n>>\t%s\n", msg.Topic(), msg.Payload())
-		},
-	)
-	opts.OnConnectAttempt = func(_ *url.URL, tlsCfg *tls.Config) *tls.Config {
-		fmt.Println("Connecting...")
-		return tlsCfg
-	}
-	opts.OnReconnecting = func(_ mqtt.Client, _ *mqtt.ClientOptions) {
-		fmt.Println("Reconnecting...")
-	}
-	opts.OnConnect = func(_ mqtt.Client) {
-		fmt.Println("Connected")
-	}
-	opts.OnConnectionLost = func(_ mqtt.Client, err error) {
-		fmt.Printf("Connection lost: %v", err)
-	}
-
-	client := mqtt.NewClient(opts)
-	if token := client.Connect(); token.Wait() && token.Error() != nil {
+	c := client.New("emqxsl-ca.crt")
+	if token := c.Connect(); token.Wait() && token.Error() != nil {
 		log.Fatal(token.Error())
 	}
 
-	sub(client)
-	publish(client)
+	sub(c)
+	publish(c)
 
-	client.Disconnect(250)
+	c.Disconnect(250)
 }
