@@ -1,6 +1,11 @@
 package logger
 
-import glog "github.com/labstack/gommon/log"
+import (
+	"os"
+
+	mqtt "github.com/eclipse/paho.mqtt.golang"
+	glog "github.com/labstack/gommon/log"
+)
 
 type Fatal struct{}
 
@@ -70,4 +75,18 @@ func (p Plain) Println(v ...interface{}) {
 
 func (p Plain) Printf(format string, v ...interface{}) {
 	glog.Printf(format, v...)
+}
+
+func Init() {
+	glog.SetHeader("${time_rfc3339} ${level} ${short_file}:${line}")
+	glog.EnableColor()
+
+	mqtt.ERROR = Error{}
+	mqtt.CRITICAL = Error{}
+	mqtt.WARN = Warn{}
+
+	if os.Getenv("DEBUG") == "1" {
+		glog.SetLevel(glog.DEBUG)
+		mqtt.DEBUG = Debug{}
+	}
 }
