@@ -17,13 +17,16 @@ func main() {
 
 	e := echo.New()
 
+	e.File("/subscriber", "public/subscriber.html")
+	e.File("/favicon.ico", "images/favicon.ico")
+
 	cfgClient := client.NewWebSocket("emqxsl-ca.crt", "location/1/kiosk/config")
 	if token := cfgClient.Connect(); token.Wait() && token.Error() != nil {
 		glog.Fatal(token.Error())
 	}
 
 	e.GET(
-		"/ws", func(c echo.Context) error {
+		"/ws/config", func(c echo.Context) error {
 			upgrader := websocket.Upgrader{}
 			conn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
 			if err != nil {

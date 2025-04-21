@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin MQTT publisher</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #f9f9f9;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: auto;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        input, textarea {
+            width: 100%;
+            font-size: 1em;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            box-sizing: border-box;
+            margin-top: 6px;
+            margin-bottom: 12px;
+        }
+
+        textarea {
+            height: 200px;
+            font-family: monospace;
+            resize: vertical;
+        }
+
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1em;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        #toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #323232;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 6px;
+            opacity: 0;
+            transition: opacity 0.4s ease;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>📤 Admin MQTT publisher</h2>
+    <label for="topic">Topic</label>
+    <input type="text" id="topic"
+           placeholder="Enter MQTT topic (e.g. location/1/kiosk/config)"
+           value="location/1/kiosk/config"/>
+    <label for="payload">Payload</label>
+    <textarea id="payload"
+              placeholder='Enter JSON payload (e.g. {"enabled":true})'></textarea>
+    <button onclick="publish()">Publish</button>
+</div>
+
+<div id="toast"></div>
+
+<script>
+    async function publish() {
+        const topic = document.getElementById("topic").value.trim();
+        const payload = document.getElementById("payload").value.trim();
+
+        if (!topic) {
+            showToast("❌ Topic is required");
+            return;
+        }
+
+        try {
+            const parsed = JSON.parse(payload); // validate JSON
+
+            const res = await fetch('http://localhost:9090/publish', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    topic: topic,
+                    data: parsed
+                }),
+            });
+
+            if (!res.ok) throw new Error("Failed to publish");
+            showToast("✅ Published successfully");
+        } catch (err) {
+            console.error(err);
+            showToast("❌ Invalid JSON or publish error");
+        }
+    }
+
+    function showToast(message) {
+        const toast = document.getElementById('toast');
+        toast.textContent = message;
+        toast.style.opacity = 1;
+        setTimeout(() => toast.style.opacity = 0, 3000);
+    }
+</script>
+
+</body>
+</html>

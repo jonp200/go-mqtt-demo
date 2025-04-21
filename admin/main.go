@@ -24,7 +24,7 @@ func main() {
 		glog.Fatal(token.Error())
 	}
 
-	e.File("/", "public/index.html")
+	e.File("/publisher", "public/publisher.html")
 	e.File("/favicon.ico", "images/favicon.ico")
 
 	e.POST(

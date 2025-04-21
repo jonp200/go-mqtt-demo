@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Kiosk MQTT Subscriber</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #f9f9f9;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: auto;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+        #thread {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 10px;
+            height: 400px;
+            overflow-y: auto;
+        }
+        .message {
+            padding: 8px;
+            word-wrap: break-word;
+        }
+        .timestamp {
+            color: #888;
+            font-size: 0.8em;
+            margin-top: 4px;
+        }
+        pre {
+            margin: 0;
+            font-family: monospace;
+            background: #f0f0f0;
+            padding: 6px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>📡 Kiosk configuration history</h2>
+    <div id="thread"></div>
+</div>
+
+<script>
+    const thread = document.getElementById('thread');
+    const ws = new WebSocket('ws://localhost:9191/ws/config');
+
+    ws.onmessage = (event) => {
+        const container = document.createElement('div');
+        container.className = 'message';
+
+        const text = document.createElement('pre');
+        try {
+            const json = JSON.parse(event.data);
+            text.textContent = JSON.stringify(json, null, 2);
+        } catch {
+            text.textContent = event.data;
+        }
+
+        const timestamp = document.createElement('div');
+        timestamp.className = 'timestamp';
+        timestamp.textContent = new Date().toISOString();
+
+        container.appendChild(text);
+        container.appendChild(timestamp);
+        thread.appendChild(container);
+
+        // Scroll to bottom
+        thread.scrollTop = thread.scrollHeight;
+    };
+
+    ws.onopen = () => {
+        console.log('Connected to WebSocket');
+    };
+
+    ws.onerror = (err) => {
+        console.error('WebSocket error:', err);
+    };
+
+    ws.onclose = () => {
+        console.log('WebSocket disconnected');
+    };
+</script>
+
+</body>
+</html>
