@@ -1,0 +1,12 @@
+<component name="ProjectRunConfigurationManager">
+    <configuration default="false" name="go build admin" type="GoApplicationRunConfiguration"
+                   factoryName="Go Application">
+        <module name="go-mqtt-demo"/>
+        <working_directory value="$PROJECT_DIR$/admin"/>
+        <kind value="FILE"/>
+        <package value="main"/>
+        <directory value="$PROJECT_DIR$"/>
+        <filePath value="$PROJECT_DIR$/admin/main.go"/>
+        <method v="2"/>
+    </configuration>
+</component>

@@ -17,16 +17,16 @@ func main() {
 	}
 	logger.Init()
 
-	c := client.NewMqtt("emqxsl-ca.crt")
+	c := client.NewMqtt("emqxsl-ca.crt", "emqx_demo")
 	if token := c.Connect(); token.Wait() && token.Error() != nil {
 		glog.Fatal(token.Error())
 	}
 
 	func(client mqtt.Client) {
 		{
-			// Sample subscribe message with the topic `location/1/kiosk/1/sensor1`
+			// Sample subscribe message with the topic `location/1/kiosk/1/sensor/1`
 			// Ideally, a different client subscribes with this topic.
-			topic := "location/1/kiosk/1/sensor1"
+			topic := "location/1/kiosk/1/sensor/1"
 			token := client.Subscribe(topic, 1, nil)
 			token.Wait()
 			glog.Infof("Subscribed to topic %s", topic)
@@ -49,7 +49,7 @@ func main() {
 		const num = 10
 		for i := 0; i < num; i++ {
 			text := fmt.Sprintf("Message %d", i)
-			token := client.Publish("location/1/kiosk/1/sensor1", 0, false, text)
+			token := client.Publish("location/1/kiosk/1/sensor/1", 0, false, text)
 			token.Wait()
 			time.Sleep(time.Second)
 		}

@@ -4,8 +4,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"math/rand"
 	"net/url"
 	"os"
+	"strconv"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/gorilla/websocket"
@@ -26,10 +28,11 @@ func SetTLSConfig(opts *mqtt.ClientOptions, caName string) {
 	)
 }
 
-func SetAuth(opts *mqtt.ClientOptions) {
-	opts.SetClientID(os.Getenv("CLIENT_ID"))
-	opts.SetUsername(os.Getenv("CLIENT_USERNAME"))
-	opts.SetPassword(os.Getenv("CLIENT_PASSWORD"))
+func SetAuth(clientIdPrefix string, opts *mqtt.ClientOptions) {
+	clientId := clientIdPrefix + "_uid" + strconv.Itoa(rand.Intn(9999)) // client ID must be unique
+	opts.SetClientID(clientId)
+	opts.SetUsername(os.Getenv("MQTT_USERNAME"))
+	opts.SetPassword(os.Getenv("MQTT_PASSWORD"))
 }
 
 func publishHandler(_ mqtt.Client, msg mqtt.Message) {
@@ -57,13 +60,13 @@ type Mqtt struct {
 	mqtt.Client
 }
 
-func NewMqtt(caName string) *Mqtt {
+func NewMqtt(caName, clientIdPrefix string) *Mqtt {
 	opts := mqtt.NewClientOptions().
 		AddBroker(fmt.Sprintf("mqtts://%v:%v", os.Getenv("BROKER_ADDRESS"), os.Getenv("BROKER_PORT"))).
 		SetDefaultPublishHandler(publishHandler)
 
 	SetTLSConfig(opts, caName)
-	SetAuth(opts)
+	SetAuth(clientIdPrefix, opts)
 
 	opts.OnConnectAttempt = onConnectAttempt
 	opts.OnReconnecting = onReconnecting
@@ -125,12 +128,12 @@ type WebSocket struct {
 	*WebSocketEventWatcher
 }
 
-func NewWebSocket(caName, topic string) *WebSocket {
+func NewWebSocket(caName, clientIdPrefix, topic string) *WebSocket {
 	opts := mqtt.NewClientOptions().
 		AddBroker(fmt.Sprintf("wss://%v:%v/mqtt", os.Getenv("BROKER_ADDRESS"), os.Getenv("BROKER_WS_PORT")))
 
 	SetTLSConfig(opts, caName)
-	SetAuth(opts)
+	SetAuth(clientIdPrefix, opts)
 
 	opts.OnConnectAttempt = onConnectAttempt
 	opts.OnReconnecting = onReconnecting
@@ -139,8 +142,9 @@ func NewWebSocket(caName, topic string) *WebSocket {
 	opts.OnConnect = func(client mqtt.Client) {
 		glog.Infof("Connected to broker over WebSocket")
 
+		const qos = 1 // preferred to use QOS 1 when subscribing
 		token := client.Subscribe(
-			topic, 1, func(_ mqtt.Client, msg mqtt.Message) {
+			topic, qos, func(_ mqtt.Client, msg mqtt.Message) {
 				glog.Infof("Received from topic: %v\n>>\t%s", msg.Topic(), msg.Payload())
 				watcher.Message <- msg.Payload()
 			},

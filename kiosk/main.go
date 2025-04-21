@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http"
+
 	"github.com/gorilla/websocket"
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
@@ -17,11 +20,19 @@ func main() {
 
 	e := echo.New()
 
-	e.File("/subscriber", "public/subscriber.html")
 	e.File("/favicon.ico", "images/favicon.ico")
+	e.File("/publisher", "public/publisher.html")
+	e.File("/subscriber", "public/subscriber.html")
 
-	cfgClient := client.NewWebSocket("emqxsl-ca.crt", "location/1/kiosk/config")
+	// Client for subscribing to kiosk config in the location
+	cfgClient := client.NewWebSocket("emqxsl-ca.crt", "loc1_kiosk_cfg", "location/1/kiosk/config")
 	if token := cfgClient.Connect(); token.Wait() && token.Error() != nil {
+		glog.Fatal(token.Error())
+	}
+
+	// Client for publishing to the kiosk sensor in the location
+	sensorClient := client.NewMqtt("emqxsl-ca.crt", "loc1_kiosk1_sensor")
+	if token := sensorClient.Connect(); token.Wait() && token.Error() != nil {
 		glog.Fatal(token.Error())
 	}
 
@@ -45,6 +56,35 @@ func main() {
 			}
 
 			return nil
+		},
+	)
+
+	e.POST(
+		"/sensor", func(c echo.Context) error {
+			var p struct {
+				Data any `json:"data"`
+			}
+			if err := c.Bind(&p); err != nil {
+				return echo.NewHTTPError(http.StatusBadRequest, err)
+			}
+
+			data, err := json.Marshal(p.Data)
+			if err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, err)
+			}
+
+			const qos = 0
+			if token := sensorClient.Publish(
+				"location/1/kiosk/1/sensor/1", qos, false, data,
+			); token.Wait() && token.Error() != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, err)
+			}
+
+			return c.JSON(
+				http.StatusOK, echo.Map{
+					"message": "ok",
+				},
+			)
 		},
 	)
 

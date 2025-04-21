@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Kiosk MQTT Subscriber</title>
+    <title>Admin MQTT Subscriber</title>
     <style>
         body {
             font-family: sans-serif;
@@ -54,13 +54,13 @@
 <body>
 
 <div class="container">
-    <h2>📡 Kiosk configuration history</h2>
+    <h2>📡 Kiosk sensor history</h2>
     <div id="thread"></div>
 </div>
 
 <script>
     const thread = document.getElementById('thread');
-    const ws = new WebSocket('ws://localhost:9191/ws/config');
+    const ws = new WebSocket('ws://localhost:9090/ws/sensor');
 
     ws.onmessage = (event) => {
         const container = document.createElement('div');
