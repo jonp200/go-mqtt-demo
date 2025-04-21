@@ -24,40 +24,17 @@ func main() {
 	e.File("/publisher", "public/publisher.html")
 	e.File("/subscriber", "public/subscriber.html")
 
-	// Client for subscribing to all kiosks' sensors in the location
-	sensorClient := client.NewWebSocket("emqxsl-ca.crt", "loc1_kiosk_sensor", "location/1/kiosk/+/sensor/#")
-	if token := sensorClient.Connect(); token.Wait() && token.Error() != nil {
-		glog.Fatal(token.Error())
-	}
-
 	// Client for publishing to kiosk config in the location
-	cfgClient := client.NewMqtt("emqxsl-ca.crt", "loc1_kiosk_cfg")
+	cfgClient := client.NewMqtt("emqxsl-ca.crt", "pub_loc1_kiosk_cfg")
 	if token := cfgClient.Connect(); token.Wait() && token.Error() != nil {
 		glog.Fatal(token.Error())
 	}
 
-	e.GET(
-		"/ws/sensor", func(c echo.Context) error {
-			upgrader := websocket.Upgrader{}
-			conn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
-			if err != nil {
-				glog.Errorf("WebSocket upgrade failed: %v", err)
-				return err
-			}
-			defer conn.Close()
-
-			sensorClient.Event <- client.WebSocketEvent{Conn: conn, Action: "add"}
-
-			for {
-				if _, _, err = conn.ReadMessage(); err != nil {
-					sensorClient.Event <- client.WebSocketEvent{Conn: conn, Action: "remove"}
-					break
-				}
-			}
-
-			return nil
-		},
-	)
+	// Client for subscribing to all kiosks' sensors in the location
+	sensorClient := client.NewWebSocket("emqxsl-ca.crt", "sub_loc1_kiosk_sensor", "location/1/kiosk/+/sensor/#")
+	if token := sensorClient.Connect(); token.Wait() && token.Error() != nil {
+		glog.Fatal(token.Error())
+	}
 
 	e.POST(
 		"/config", func(c echo.Context) error {
@@ -85,6 +62,29 @@ func main() {
 					"message": "ok",
 				},
 			)
+		},
+	)
+
+	e.GET(
+		"/ws/sensor", func(c echo.Context) error {
+			upgrader := websocket.Upgrader{}
+			conn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
+			if err != nil {
+				glog.Errorf("WebSocket upgrade failed: %v", err)
+				return err
+			}
+			defer conn.Close()
+
+			sensorClient.Event <- client.WebSocketEvent{Conn: conn, Action: "add"}
+
+			for {
+				if _, _, err = conn.ReadMessage(); err != nil {
+					sensorClient.Event <- client.WebSocketEvent{Conn: conn, Action: "remove"}
+					break
+				}
+			}
+
+			return nil
 		},
 	)
 

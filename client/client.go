@@ -4,17 +4,15 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"math/rand"
 	"net/url"
 	"os"
-	"strconv"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/gorilla/websocket"
 	glog "github.com/labstack/gommon/log"
 )
 
-func SetTLSConfig(opts *mqtt.ClientOptions, caName string) {
+func setTLSConfig(opts *mqtt.ClientOptions, caName string) {
 	certpool := x509.NewCertPool()
 	ca, err := os.ReadFile(caName)
 	if err != nil {
@@ -28,11 +26,14 @@ func SetTLSConfig(opts *mqtt.ClientOptions, caName string) {
 	)
 }
 
-func SetAuth(clientIdPrefix string, opts *mqtt.ClientOptions) {
-	clientId := clientIdPrefix + "_uid" + strconv.Itoa(rand.Intn(9999)) // client ID must be unique
-	opts.SetClientID(clientId)
+func setAuth(clientId string, opts *mqtt.ClientOptions) {
+	opts.SetClientID(clientId) // client ID must be unique
 	opts.SetUsername(os.Getenv("MQTT_USERNAME"))
 	opts.SetPassword(os.Getenv("MQTT_PASSWORD"))
+}
+
+func setCleanSession(opts *mqtt.ClientOptions) {
+	opts.CleanSession = os.Getenv("MQTT_CLEAN_SESSION") == "1"
 }
 
 func publishHandler(_ mqtt.Client, msg mqtt.Message) {
@@ -60,13 +61,14 @@ type Mqtt struct {
 	mqtt.Client
 }
 
-func NewMqtt(caName, clientIdPrefix string) *Mqtt {
+func NewMqtt(caName, clientId string) *Mqtt {
 	opts := mqtt.NewClientOptions().
 		AddBroker(fmt.Sprintf("mqtts://%v:%v", os.Getenv("BROKER_ADDRESS"), os.Getenv("BROKER_PORT"))).
 		SetDefaultPublishHandler(publishHandler)
 
-	SetTLSConfig(opts, caName)
-	SetAuth(clientIdPrefix, opts)
+	setTLSConfig(opts, caName)
+	setAuth(clientId, opts)
+	setCleanSession(opts)
 
 	opts.OnConnectAttempt = onConnectAttempt
 	opts.OnReconnecting = onReconnecting
@@ -128,12 +130,13 @@ type WebSocket struct {
 	*WebSocketEventWatcher
 }
 
-func NewWebSocket(caName, clientIdPrefix, topic string) *WebSocket {
+func NewWebSocket(caName, clientId, topic string) *WebSocket {
 	opts := mqtt.NewClientOptions().
 		AddBroker(fmt.Sprintf("wss://%v:%v/mqtt", os.Getenv("BROKER_ADDRESS"), os.Getenv("BROKER_WS_PORT")))
 
-	SetTLSConfig(opts, caName)
-	SetAuth(clientIdPrefix, opts)
+	setTLSConfig(opts, caName)
+	setAuth(clientId, opts)
+	setCleanSession(opts)
 
 	opts.OnConnectAttempt = onConnectAttempt
 	opts.OnReconnecting = onReconnecting
