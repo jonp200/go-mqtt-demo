@@ -4,10 +4,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	glog "github.com/labstack/gommon/log"
 )
@@ -80,45 +82,65 @@ func NewMqtt(caName, clientId string) *Mqtt {
 
 type WebSocketEvent struct {
 	Conn   *websocket.Conn
-	Action string // "add" or "remove"
+	Action string
 }
 
-type WebSocketEventWatcher struct {
-	Connections map[*websocket.Conn]bool
-	Event       chan WebSocketEvent
-	Message     chan []byte
+type SseEvent struct {
+	Writer http.ResponseWriter
 }
 
-func (w *WebSocketEventWatcher) run() {
+type SseMessage struct {
+	Data []byte
+}
+
+type OfflineMessage struct {
+	Id      uuid.UUID
+	Payload []byte
+}
+
+type ConnEventWatcher struct {
+	WsEvent       chan WebSocketEvent
+	WsConn        map[*websocket.Conn]bool
+	OnlineMessage chan []byte
+
+	SseMessages    map[uuid.UUID]SseMessage
+	OfflineMessage chan OfflineMessage
+}
+
+func (w *ConnEventWatcher) run() {
 	for {
 		select {
-		case event := <-w.Event:
+		case event := <-w.WsEvent:
 			switch event.Action {
 			case "add":
+				w.WsConn[event.Conn] = true
 				glog.Info("WebSocket connection added")
-				w.Connections[event.Conn] = true
 			case "remove":
+				delete(w.WsConn, event.Conn)
 				glog.Info("WebSocket connection removed")
-				delete(w.Connections, event.Conn)
 			}
-		case msg := <-w.Message:
-			for conn := range w.Connections {
+		case msg := <-w.OnlineMessage:
+			for conn := range w.WsConn {
 				if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
 					glog.Errorf("Failed to send message: %v", err)
 					_ = conn.Close()
-					delete(w.Connections, conn)
+					delete(w.WsConn, conn)
 					glog.Error("WebSocket connection removed")
 				}
 			}
+		case msg := <-w.OfflineMessage:
+			w.SseMessages[msg.Id] = SseMessage{msg.Payload}
 		}
 	}
 }
 
-func NewWebSocketEventWatcher() *WebSocketEventWatcher {
-	w := &WebSocketEventWatcher{
-		Connections: make(map[*websocket.Conn]bool),
-		Event:       make(chan WebSocketEvent),
-		Message:     make(chan []byte),
+func NewConnEventWatcher() *ConnEventWatcher {
+	w := &ConnEventWatcher{
+		WsConn:         make(map[*websocket.Conn]bool),
+		WsEvent:        make(chan WebSocketEvent),
+		SseMessages:    make(map[uuid.UUID]SseMessage),
+		OnlineMessage:  make(chan []byte),
+		OfflineMessage: make(chan OfflineMessage),
 	}
 
 	go w.run()
@@ -127,7 +149,7 @@ func NewWebSocketEventWatcher() *WebSocketEventWatcher {
 
 type WebSocket struct {
 	mqtt.Client
-	*WebSocketEventWatcher
+	*ConnEventWatcher
 }
 
 func NewWebSocket(caName, clientId, topic string) *WebSocket {
@@ -141,26 +163,39 @@ func NewWebSocket(caName, clientId, topic string) *WebSocket {
 	opts.OnConnectAttempt = onConnectAttempt
 	opts.OnReconnecting = onReconnecting
 
-	watcher := NewWebSocketEventWatcher()
+	watcher := NewConnEventWatcher()
 	opts.OnConnect = func(client mqtt.Client) {
-		glog.Infof("Connected to broker over WebSocket")
-
 		const qos = 1 // preferred to use QOS 1 when subscribing
+		init := true
 		token := client.Subscribe(
 			topic, qos, func(_ mqtt.Client, msg mqtt.Message) {
+				// Send messages found upon init to the offline message chan
+				if init {
+					watcher.OfflineMessage <- OfflineMessage{
+						Id:      uuid.New(), // MessageID() is always 0. Maybe there's a config necessary?
+						Payload: msg.Payload(),
+					}
+					glog.Infof("Message (while offline) from topic: %v\n>>\t%s", msg.Topic(), msg.Payload())
+					return
+				}
+
 				glog.Infof("Received from topic: %v\n>>\t%s", msg.Topic(), msg.Payload())
-				watcher.Message <- msg.Payload()
+				watcher.OnlineMessage <- msg.Payload()
 			},
 		)
+
 		if err := token.Error(); token.Wait() && err != nil {
 			glog.Errorf("Subscribe error: %v", err)
 		}
+
+		glog.Infof("Connected to broker over WebSocket")
+		init = false
 	}
 
 	opts.OnConnectionLost = onConnectionLost
 
 	return &WebSocket{
-		Client:                mqtt.NewClient(opts),
-		WebSocketEventWatcher: watcher,
+		Client:           mqtt.NewClient(opts),
+		ConnEventWatcher: watcher,
 	}
 }

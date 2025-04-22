@@ -75,11 +75,11 @@ func main() {
 			}
 			defer conn.Close()
 
-			sensorClient.Event <- client.WebSocketEvent{Conn: conn, Action: "add"}
+			sensorClient.WsEvent <- client.WebSocketEvent{Conn: conn, Action: "add"}
 
 			for {
 				if _, _, err = conn.ReadMessage(); err != nil {
-					sensorClient.Event <- client.WebSocketEvent{Conn: conn, Action: "remove"}
+					sensorClient.WsEvent <- client.WebSocketEvent{Conn: conn, Action: "remove"}
 					break
 				}
 			}

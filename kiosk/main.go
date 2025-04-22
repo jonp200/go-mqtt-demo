@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/gorilla/websocket"
@@ -66,6 +67,32 @@ func main() {
 	)
 
 	e.GET(
+		"/offline-message/config", func(c echo.Context) error {
+			c.Response().Header().Set("Content-Type", "text/event-stream")
+			c.Response().Header().Set("Cache-Control", "no-cache")
+			c.Response().Header().Set("Connection", "keep-alive")
+
+			f, ok := c.Response().Writer.(http.Flusher)
+			if !ok {
+				glog.Errorf("Failed to flush response stream: %v", c.Response().Writer)
+				return nil
+			}
+
+			for k, v := range cfgClient.SseMessages {
+				str := fmt.Sprintf("data: %s\n\n", v.Data)
+				if _, err := c.Response().Writer.Write([]byte(str)); err != nil {
+					glog.Errorf("Failed to write message: %v", err)
+				}
+
+				f.Flush()
+				delete(cfgClient.SseMessages, k)
+			}
+
+			return nil
+		},
+	)
+
+	e.GET(
 		"/ws/config", func(c echo.Context) error {
 			upgrader := websocket.Upgrader{}
 			conn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
@@ -75,11 +102,11 @@ func main() {
 			}
 			defer conn.Close()
 
-			cfgClient.Event <- client.WebSocketEvent{Conn: conn, Action: "add"}
+			cfgClient.WsEvent <- client.WebSocketEvent{Conn: conn, Action: "add"}
 
 			for {
 				if _, _, err = conn.ReadMessage(); err != nil {
-					cfgClient.Event <- client.WebSocketEvent{Conn: conn, Action: "remove"}
+					cfgClient.WsEvent <- client.WebSocketEvent{Conn: conn, Action: "remove"}
 					break
 				}
 			}

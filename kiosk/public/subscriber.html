@@ -30,15 +30,23 @@
             overflow-y: auto;
         }
 
-        .message {
+        .message, .offline-message {
             padding: 8px;
             word-wrap: break-word;
         }
 
-        .timestamp {
+        .offline-message {
+            border: 1px dotted #ddd;
+        }
+
+        .timestamp, .offline-tagline {
             color: #888;
             font-size: 0.8em;
             margin-top: 4px;
+        }
+
+        .offline-tagline {
+            margin-bottom: 4px;
         }
 
         pre {
@@ -60,6 +68,33 @@
 
 <script>
     const thread = document.getElementById('thread');
+
+    const offlineConfigSrc = new EventSource(`/offline-message/config`)
+
+    offlineConfigSrc.onmessage = (event) => {
+        const container = document.createElement('div');
+        container.className = 'offline-message';
+
+        const text = document.createElement('pre');
+        try {
+            const json = JSON.parse(event.data);
+            text.textContent = JSON.stringify(json, null, 2);
+        } catch {
+            text.textContent = event.data;
+        }
+
+        const tagline = document.createElement('div');
+        tagline.className = 'offline-tagline';
+        tagline.textContent = 'Message since last online';
+
+        container.appendChild(tagline);
+        container.appendChild(text);
+        thread.appendChild(container);
+
+        // Scroll to bottom
+        thread.scrollTop = thread.scrollHeight;
+    };
+
     const ws = new WebSocket('ws://localhost:9191/ws/config');
 
     ws.onmessage = (event) => {
