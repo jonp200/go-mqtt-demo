@@ -17,9 +17,11 @@ import (
 func setTLSConfig(opts *mqtt.ClientOptions, caName string) {
 	certpool := x509.NewCertPool()
 	ca, err := os.ReadFile(caName)
+
 	if err != nil {
 		glog.Fatal(err.Error())
 	}
+
 	certpool.AppendCertsFromPEM(ca)
 	opts.SetTLSConfig(
 		&tls.Config{
@@ -44,6 +46,7 @@ func publishHandler(_ mqtt.Client, msg mqtt.Message) {
 
 func onConnectAttempt(broker *url.URL, tlsCfg *tls.Config) *tls.Config {
 	glog.Infof("Connecting to broker %s...", broker.Host)
+
 	return tlsCfg
 }
 
@@ -107,33 +110,6 @@ type ConnEventWatcher struct {
 	OfflineMessage chan OfflineMessage
 }
 
-func (w *ConnEventWatcher) run() {
-	for {
-		select {
-		case event := <-w.WsEvent:
-			switch event.Action {
-			case "add":
-				w.WsConn[event.Conn] = true
-				glog.Info("WebSocket connection added")
-			case "remove":
-				delete(w.WsConn, event.Conn)
-				glog.Info("WebSocket connection removed")
-			}
-		case msg := <-w.OnlineMessage:
-			for conn := range w.WsConn {
-				if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-					glog.Errorf("Failed to send message: %v", err)
-					_ = conn.Close()
-					delete(w.WsConn, conn)
-					glog.Error("WebSocket connection removed")
-				}
-			}
-		case msg := <-w.OfflineMessage:
-			w.SseMessages[msg.Id] = SseMessage{msg.Payload}
-		}
-	}
-}
-
 func NewConnEventWatcher() *ConnEventWatcher {
 	w := &ConnEventWatcher{
 		WsConn:         make(map[*websocket.Conn]bool),
@@ -144,7 +120,38 @@ func NewConnEventWatcher() *ConnEventWatcher {
 	}
 
 	go w.run()
+
 	return w
+}
+
+func (w *ConnEventWatcher) run() {
+	for {
+		select {
+		case event := <-w.WsEvent:
+			switch event.Action {
+			case "add":
+				w.WsConn[event.Conn] = true
+
+				glog.Info("WebSocket connection added")
+			case "remove":
+				delete(w.WsConn, event.Conn)
+				glog.Info("WebSocket connection removed")
+			}
+		case msg := <-w.OnlineMessage:
+			for conn := range w.WsConn {
+				if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+					glog.Errorf("Failed to send message: %v", err)
+
+					_ = conn.Close()
+
+					delete(w.WsConn, conn)
+					glog.Error("WebSocket connection removed")
+				}
+			}
+		case msg := <-w.OfflineMessage:
+			w.SseMessages[msg.Id] = SseMessage{msg.Payload}
+		}
+	}
 }
 
 type WebSocket struct {
@@ -166,6 +173,7 @@ func NewWebSocket(caName, clientId, topic string) *WebSocket {
 	watcher := NewConnEventWatcher()
 	opts.OnConnect = func(client mqtt.Client) {
 		const qos = 1 // preferred to use QOS 1 when subscribing
+
 		init := true
 		token := client.Subscribe(
 			topic, qos, func(_ mqtt.Client, msg mqtt.Message) {
@@ -176,6 +184,7 @@ func NewWebSocket(caName, clientId, topic string) *WebSocket {
 						Payload: msg.Payload(),
 					}
 					glog.Infof("Message (while offline) from topic: %v\n>>\t%s", msg.Topic(), msg.Payload())
+
 					return
 				}
 
@@ -189,6 +198,7 @@ func NewWebSocket(caName, clientId, topic string) *WebSocket {
 		}
 
 		glog.Infof("Connected to broker over WebSocket")
+
 		init = false
 	}
 

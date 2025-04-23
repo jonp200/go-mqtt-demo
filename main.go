@@ -15,6 +15,7 @@ func main() {
 	if err := godotenv.Load(); err != nil {
 		glog.Fatal("Error loading .env file")
 	}
+
 	logger.Init()
 
 	c := client.NewMqtt("emqxsl-ca.crt", "emqx_demo")
@@ -55,5 +56,7 @@ func main() {
 		}
 	}(c)
 
-	c.Disconnect(250)
+	const wait = 250
+
+	c.Disconnect(wait)
 }
