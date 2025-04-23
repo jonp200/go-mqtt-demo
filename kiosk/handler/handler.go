@@ -88,8 +88,7 @@ func (h *Handler) SseConfig(c echo.Context) error {
 	}
 
 	for k, v := range h.cfgClient.SseMessages {
-		str := fmt.Sprintf("data: %s\n\n", v.Data)
-		if _, err := c.Response().Writer.Write([]byte(str)); err != nil {
+		if _, err := fmt.Fprintf(c.Response().Writer, "data: %s\n\n", v.Data); err != nil {
 			glog.Errorf("Failed to write message: %v", err)
 		}
 
