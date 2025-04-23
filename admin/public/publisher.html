@@ -71,7 +71,7 @@
 <div class="container">
     <h2>📤 Admin MQTT publisher</h2>
     <label for="topic">Topic</label>
-    <input type="text" id="topic" value="location/1/kiosk/config" readonly/>
+    <input type="text" id="topic" value="location/{{.LocId}}/kiosk/config" readonly/>
     <label for="payload">JSON Payload</label>
     <textarea id="payload" placeholder='Enter JSON payload (e.g. {"enabled":true})'></textarea>
     <button onclick="publish()">Publish</button>
@@ -91,7 +91,7 @@
         try {
             const parsed = JSON.parse(payload); // validate JSON
 
-            const res = await fetch('http://localhost:9090/config', {
+            const res = await fetch('http://localhost:{{.Port}}/config', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({

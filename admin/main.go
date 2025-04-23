@@ -2,13 +2,17 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"html/template"
 	"net/http"
+	"os"
 
 	"github.com/gorilla/websocket"
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
 	glog "github.com/labstack/gommon/log"
 	"go-mqtt-demo/client"
+	tmpl "go-mqtt-demo/html/template"
 	"go-mqtt-demo/logger"
 )
 
@@ -18,20 +22,45 @@ func main() {
 	}
 	logger.Init()
 
+	port := os.Getenv("SERVICE_PORT")
+	locId := os.Getenv("LOCATION_ID")
+
 	e := echo.New()
 
+	e.Renderer = &tmpl.Renderer{Template: template.Must(template.ParseGlob("public/*.html"))}
+
 	e.File("/favicon.ico", "images/favicon.ico")
-	e.File("/publisher", "public/publisher.html")
-	e.File("/subscriber", "public/subscriber.html")
+	e.GET(
+		"/publisher", func(c echo.Context) error {
+			data := map[string]interface{}{
+				"Port":  port,
+				"LocId": locId,
+			}
+			return c.Render(http.StatusOK, "publisher.html", data)
+		},
+	)
+	e.GET(
+		"/subscriber", func(c echo.Context) error {
+			data := map[string]interface{}{
+				"Port": port,
+			}
+			return c.Render(http.StatusOK, "subscriber.html", data)
+		},
+	)
+
+	const ca = "emqxsl-ca.crt"
 
 	// Client for publishing to kiosk config in the location
-	cfgClient := client.NewMqtt("emqxsl-ca.crt", "pub_loc1_kiosk_cfg")
+	const cfgClientId = "pub_cfg_client"
+	cfgClient := client.NewMqtt(ca, cfgClientId)
 	if token := cfgClient.Connect(); token.Wait() && token.Error() != nil {
 		glog.Fatal(token.Error())
 	}
 
 	// Client for subscribing to all kiosks' sensors in the location
-	sensorClient := client.NewWebSocket("emqxsl-ca.crt", "sub_loc1_kiosk_sensor", "location/1/kiosk/+/sensor/#")
+	const sensorClientId = "sub_sensor_client"
+	topic := fmt.Sprintf("location/%v/kiosk/+/sensor/#", locId)
+	sensorClient := client.NewWebSocket(ca, sensorClientId, topic)
 	if token := sensorClient.Connect(); token.Wait() && token.Error() != nil {
 		glog.Fatal(token.Error())
 	}
@@ -51,9 +80,8 @@ func main() {
 			}
 
 			const qos = 0
-			if token := cfgClient.Publish(
-				"location/1/kiosk/config", qos, false, data,
-			); token.Wait() && token.Error() != nil {
+			topic := fmt.Sprintf("location/%v/kiosk/config", locId)
+			if token := cfgClient.Publish(topic, qos, false, data); token.Wait() && token.Error() != nil {
 				return echo.NewHTTPError(http.StatusInternalServerError, err)
 			}
 
@@ -88,5 +116,5 @@ func main() {
 		},
 	)
 
-	e.Logger.Fatal(e.Start(":9090"))
+	e.Logger.Fatal(e.Start(":" + port))
 }

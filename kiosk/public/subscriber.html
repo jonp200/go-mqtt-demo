@@ -95,7 +95,7 @@
         thread.scrollTop = thread.scrollHeight;
     };
 
-    const ws = new WebSocket('ws://localhost:9191/ws/config');
+    const ws = new WebSocket('ws://localhost:{{.Port}}/ws/config');
 
     ws.onmessage = (event) => {
         const container = document.createElement('div');

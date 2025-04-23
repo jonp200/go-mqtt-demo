@@ -29,7 +29,7 @@ func setTLSConfig(opts *mqtt.ClientOptions, caName string) {
 }
 
 func setAuth(clientId string, opts *mqtt.ClientOptions) {
-	opts.SetClientID(clientId) // client ID must be unique
+	opts.SetClientID(clientId + "_" + os.Getenv("CLIENT_ID_SUFFIX")) // client ID must be unique
 	opts.SetUsername(os.Getenv("MQTT_USERNAME"))
 	opts.SetPassword(os.Getenv("MQTT_PASSWORD"))
 }
