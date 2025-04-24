@@ -4,6 +4,7 @@ import (
 	"html/template"
 	"net/http"
 	"os"
+	"os/signal"
 
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
@@ -34,6 +35,18 @@ func main() {
 	e.POST("/config", h.Config)
 	e.GET("/offline-message/sensors", h.SseSensors)
 	e.GET("/ws/sensors", h.WsSensors)
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+
+	go func() {
+		<-c
+
+		const delay = 250
+
+		h.Disconnect(delay)
+		os.Exit(0)
+	}()
 
 	e.Logger.Fatal(e.Start(":" + port))
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -39,6 +40,29 @@ func New(ca, cfgClientId, sensorClientId string) *Handler {
 		sensorsClient: sensorsClient,
 		locId:         locId,
 	}
+}
+
+func (h *Handler) Disconnect(delay uint) {
+	glog.Infof("Disconnecting clients...")
+
+	const tasks = 2
+
+	var wg sync.WaitGroup
+
+	wg.Add(tasks)
+
+	go func() {
+		defer wg.Done()
+		h.cfgClient.Disconnect(delay)
+	}()
+
+	go func() {
+		defer wg.Done()
+		h.sensorsClient.Disconnect(delay)
+	}()
+
+	wg.Wait()
+	glog.Infof("Clients disconnected")
 }
 
 // Config handles the publishing of kiosk config to the location.
