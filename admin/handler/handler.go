@@ -13,9 +13,9 @@ import (
 )
 
 type Handler struct {
-	cfgClient    *client.Mqtt
-	sensorClient *client.WebSocket
-	locId        string
+	cfgClient     *client.Mqtt
+	sensorsClient *client.WebSocket
+	locId         string
 }
 
 func New(ca, cfgClientId, sensorClientId string) *Handler {
@@ -27,16 +27,16 @@ func New(ca, cfgClientId, sensorClientId string) *Handler {
 	}
 
 	topic := fmt.Sprintf("location/%v/kiosk/+/sensor/#", locId)
-	sensorClient := client.NewWebSocket(ca, sensorClientId, topic)
+	sensorsClient := client.NewWebSocket(ca, sensorClientId, topic)
 
-	if token := sensorClient.Connect(); token.Wait() && token.Error() != nil {
+	if token := sensorsClient.Connect(); token.Wait() && token.Error() != nil {
 		glog.Fatal(token.Error())
 	}
 
 	return &Handler{
-		cfgClient:    cfgClient,
-		sensorClient: sensorClient,
-		locId:        locId,
+		cfgClient:     cfgClient,
+		sensorsClient: sensorsClient,
+		locId:         locId,
 	}
 }
 
@@ -70,8 +70,30 @@ func (h *Handler) Config(c echo.Context) error {
 	)
 }
 
-// WsSensor handles the subscription to all kiosks' sensors in the location.
-func (h *Handler) WsSensor(c echo.Context) error {
+// SseSensors handles the sending of sensors messages received while the service was offline.
+func (h *Handler) SseSensors(c echo.Context) error {
+	c.Response().Header().Set("Content-Type", "text/event-stream")
+	c.Response().Header().Set("Cache-Control", "no-cache")
+	c.Response().Header().Set("Connection", "keep-alive")
+
+	f, ok := c.Response().Writer.(http.Flusher)
+	if !ok {
+		glog.Errorf("Failed to flush response stream: %v", c.Response().Writer)
+
+		return nil
+	}
+
+	done := make(chan bool)
+	h.sensorsClient.SseEvent <- client.SseEvent{Writer: c.Response().Writer, Done: done}
+
+	<-done
+	f.Flush()
+
+	return nil
+}
+
+// WsSensors handles the subscription to all kiosks' sensors in the location.
+func (h *Handler) WsSensors(c echo.Context) error {
 	upgrader := websocket.Upgrader{}
 	conn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
 
@@ -83,11 +105,11 @@ func (h *Handler) WsSensor(c echo.Context) error {
 
 	defer conn.Close()
 
-	h.sensorClient.WsEvent <- client.WebSocketEvent{Conn: conn, Action: "add"}
+	h.sensorsClient.WsEvent <- client.WebSocketEvent{Conn: conn, Action: "add"}
 
 	for {
 		if _, _, err = conn.ReadMessage(); err != nil {
-			h.sensorClient.WsEvent <- client.WebSocketEvent{Conn: conn, Action: "remove"}
+			h.sensorsClient.WsEvent <- client.WebSocketEvent{Conn: conn, Action: "remove"}
 
 			break
 		}

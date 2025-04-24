@@ -32,7 +32,8 @@ func main() {
 	h := handler.New(ca, "pub_cfg_client", "sub_sensor_client")
 
 	e.POST("/config", h.Config)
-	e.GET("/ws/sensor", h.WsSensor)
+	e.GET("/offline-message/sensors", h.SseSensors)
+	e.GET("/ws/sensors", h.WsSensors)
 
 	e.Logger.Fatal(e.Start(":" + port))
 }

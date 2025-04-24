@@ -30,15 +30,24 @@
             overflow-y: auto;
         }
 
-        .message {
+        .message, .offline-message {
             padding: 8px;
             word-wrap: break-word;
         }
 
-        .timestamp {
+        .offline-message {
+            border: 1px dotted #ddd;
+        }
+
+        .timestamp, .offline-tagline {
             color: #888;
             font-size: 0.8em;
             margin-top: 4px;
+        }
+
+        .offline-tagline {
+            font-style: italic;
+            margin-bottom: 4px;
         }
 
         pre {
@@ -60,11 +69,42 @@
 
 <script>
     const thread = document.getElementById('thread');
-    const ws = new WebSocket('ws://localhost:{{.Port}}/ws/sensor');
 
-    ws.onmessage = (event) => {
+    let ws = new WebSocket('ws://localhost:{{.Port}}/ws/sensors');
+
+    function connectWebSocket() {
+        ws.onmessage = (event) => {
+            const container = document.createElement('div');
+            container.className = 'message';
+
+            const text = document.createElement('pre');
+            try {
+                const json = JSON.parse(event.data);
+                text.textContent = JSON.stringify(json, null, 2);
+            } catch {
+                text.textContent = event.data;
+            }
+
+            const timestamp = document.createElement('div');
+            timestamp.className = 'timestamp';
+            timestamp.textContent = new Date().toISOString();
+
+            container.appendChild(text);
+            container.appendChild(timestamp);
+            thread.appendChild(container);
+
+            // Scroll to bottom
+            thread.scrollTop = thread.scrollHeight;
+        };
+    }
+
+    connectWebSocket();
+
+    const offlineSensorsSrc = new EventSource(`/offline-message/sensors`)
+
+    offlineSensorsSrc.onmessage = (event) => {
         const container = document.createElement('div');
-        container.className = 'message';
+        container.className = 'offline-message';
 
         const text = document.createElement('pre');
         try {
@@ -74,29 +114,26 @@
             text.textContent = event.data;
         }
 
-        const timestamp = document.createElement('div');
-        timestamp.className = 'timestamp';
-        timestamp.textContent = new Date().toISOString();
+        const tagline = document.createElement('div');
+        tagline.className = 'offline-tagline';
+        tagline.textContent = 'Message since last online';
 
+        container.appendChild(tagline);
         container.appendChild(text);
-        container.appendChild(timestamp);
         thread.appendChild(container);
 
         // Scroll to bottom
         thread.scrollTop = thread.scrollHeight;
     };
 
-    ws.onopen = () => {
-        console.log('Connected to WebSocket');
-    };
+    offlineSensorsSrc.onopen = () => {
+        // Reconnect the WebSocket connection if it was closed to resume online messages
+        if (ws.readyState === WebSocket.CLOSED) {
+            ws = new WebSocket('ws://localhost:{{.Port}}/ws/sensors');
+            connectWebSocket();
+        }
+    }
 
-    ws.onerror = (err) => {
-        console.error('WebSocket error:', err);
-    };
-
-    ws.onclose = () => {
-        console.log('WebSocket disconnected');
-    };
 </script>
 
 </body>
