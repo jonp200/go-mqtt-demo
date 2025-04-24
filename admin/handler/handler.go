@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
@@ -70,7 +71,7 @@ func (h *Handler) Config(c echo.Context) error {
 	)
 }
 
-// SseSensors handles the sending of sensors messages received while the service was offline.
+// SseSensors handles the sending of sensor messages received while the service was offline.
 func (h *Handler) SseSensors(c echo.Context) error {
 	c.Response().Header().Set("Content-Type", "text/event-stream")
 	c.Response().Header().Set("Cache-Control", "no-cache")
@@ -105,11 +106,12 @@ func (h *Handler) WsSensors(c echo.Context) error {
 
 	defer conn.Close()
 
-	h.sensorsClient.WsEvent <- client.WebSocketEvent{Conn: conn, Action: "add"}
+	eventId := time.Now().UnixNano()
+	h.sensorsClient.WsEvent <- client.WebSocketEvent{Id: eventId, Conn: conn, Action: "add"}
 
 	for {
 		if _, _, err = conn.ReadMessage(); err != nil {
-			h.sensorsClient.WsEvent <- client.WebSocketEvent{Conn: conn, Action: "remove"}
+			h.sensorsClient.WsEvent <- client.WebSocketEvent{Id: eventId, Conn: conn, Action: "remove"}
 
 			break
 		}

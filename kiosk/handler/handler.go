@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
@@ -109,11 +110,12 @@ func (h *Handler) WsConfig(c echo.Context) error {
 
 	defer conn.Close()
 
-	h.cfgClient.WsEvent <- client.WebSocketEvent{Conn: conn, Action: "add"}
+	eventId := time.Now().UnixNano()
+	h.cfgClient.WsEvent <- client.WebSocketEvent{Id: eventId, Conn: conn, Action: "add"}
 
 	for {
 		if _, _, err = conn.ReadMessage(); err != nil {
-			h.cfgClient.WsEvent <- client.WebSocketEvent{Conn: conn, Action: "remove"}
+			h.cfgClient.WsEvent <- client.WebSocketEvent{Id: eventId, Conn: conn, Action: "remove"}
 
 			break
 		}

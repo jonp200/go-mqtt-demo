@@ -7,10 +7,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"sync"
+	"sync/atomic"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	glog "github.com/labstack/gommon/log"
 )
@@ -85,6 +86,7 @@ func NewMqtt(caName, clientId string) *Mqtt {
 }
 
 type WebSocketEvent struct {
+	Id     int64
 	Conn   *websocket.Conn
 	Action string
 }
@@ -99,13 +101,13 @@ type SseMessage struct {
 }
 
 type OfflineMessage struct {
-	Id      uuid.UUID
+	Id      int64
 	Payload []byte
 }
 
 type ConnEventWatcher struct {
 	WsEvent       chan WebSocketEvent
-	WsConn        map[*websocket.Conn]bool
+	WsConnections sync.Map
 	OnlineMessage chan []byte
 
 	SseEvent       chan SseEvent
@@ -115,7 +117,7 @@ type ConnEventWatcher struct {
 
 func NewConnEventWatcher() *ConnEventWatcher {
 	w := &ConnEventWatcher{
-		WsConn:         make(map[*websocket.Conn]bool),
+		WsConnections:  sync.Map{},
 		WsEvent:        make(chan WebSocketEvent),
 		SseEvent:       make(chan SseEvent),
 		SseMessages:    sync.Map{},
@@ -134,24 +136,14 @@ func (w *ConnEventWatcher) run() {
 		case event := <-w.WsEvent:
 			switch event.Action {
 			case "add":
-				w.WsConn[event.Conn] = true
-
+				w.WsConnections.Store(event.Id, event.Conn)
 				glog.Info("WebSocket connection added")
 			case "remove":
-				delete(w.WsConn, event.Conn)
+				w.WsConnections.Delete(event.Id)
 				glog.Info("WebSocket connection removed")
 			}
 		case msg := <-w.OnlineMessage:
-			for conn := range w.WsConn {
-				if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-					glog.Errorf("Failed to send message: %v", err)
-
-					_ = conn.Close()
-
-					delete(w.WsConn, conn)
-					glog.Error("WebSocket connection removed")
-				}
-			}
+			relayOnlineMessages(w, msg)
 		case event := <-w.SseEvent:
 			replayOfflineMessages(w, event)
 			event.Done <- true
@@ -161,12 +153,47 @@ func (w *ConnEventWatcher) run() {
 	}
 }
 
+func relayOnlineMessages(w *ConnEventWatcher, msg []byte) {
+	// WebSocket connections order does not matter, so we can iterate over the map without sorting the connections
+	w.WsConnections.Range(
+		func(k, v any) bool {
+			conn, ok := v.(*websocket.Conn)
+			if !ok {
+				glog.Errorf("Invalid data: %v", v)
+
+				w.WsConnections.Delete(k)
+				glog.Error("WebSocket connection removed")
+
+				return false
+			}
+
+			if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+				glog.Errorf("Failed to send message: %v", err)
+
+				_ = conn.Close()
+
+				w.WsConnections.Delete(k)
+				glog.Error("WebSocket connection removed")
+
+				return false
+			}
+
+			return true
+		},
+	)
+}
+
 func replayOfflineMessages(w *ConnEventWatcher, event SseEvent) {
 	iterate := func(k any, r bool) bool {
 		w.SseMessages.Delete(k)
 
 		return r
 	}
+
+	// Offline messages should be written in order, so we'll sort the messages by their ID
+	var keys []int64
+
+	entries := make(map[int64]SseMessage)
 
 	w.SseMessages.Range(
 		func(k, v any) bool {
@@ -177,15 +204,34 @@ func replayOfflineMessages(w *ConnEventWatcher, event SseEvent) {
 				return iterate(k, false)
 			}
 
-			if _, err := fmt.Fprintf(event.Writer, "data: %s\n\n", msg.Data); err != nil {
-				glog.Errorf("Failed to write message: %v", err)
+			key, ok := k.(int64)
+			if !ok {
+				glog.Errorf("Invalid key value: %v", k)
 
 				return iterate(k, false)
 			}
 
+			keys = append(keys, key)
+			entries[key] = msg
+
 			return iterate(k, true)
 		},
 	)
+
+	sort.Slice(
+		keys, func(i, j int) bool {
+			return keys[i] < keys[j]
+		},
+	)
+
+	// Use the key slice to process in order
+	for _, k := range keys {
+		if _, err := fmt.Fprintf(event.Writer, "data: %s\n\n", entries[k].Data); err != nil {
+			glog.Errorf("Failed to write message: %v", err)
+
+			break
+		}
+	}
 }
 
 type WebSocket struct {
@@ -208,16 +254,24 @@ func NewWebSocket(caName, clientId, topic string) *WebSocket {
 	opts.OnConnect = func(client mqtt.Client) {
 		const qos = 1 // preferred to use QOS 1 when subscribing
 
+		var offlineId atomic.Int64
+
 		init := true
 		token := client.Subscribe(
 			topic, qos, func(_ mqtt.Client, msg mqtt.Message) {
 				// Send messages found upon init to the offline message chan
 				if init {
+					// MessageID() is always 0 and cannot be used as an ID. Maybe there's a config necessary?
+					offlineId.Add(1)
+
 					watcher.OfflineMessage <- OfflineMessage{
-						Id:      uuid.New(), // MessageID() is always 0. Maybe there's a config necessary?
+						Id:      offlineId.Load(),
 						Payload: msg.Payload(),
 					}
-					glog.Infof("Message (while offline) from topic: %v\n>>\t%s", msg.Topic(), msg.Payload())
+					glog.Infof(
+						"Message [%v] (while offline) from topic: %v\n>>\t%s", offlineId.Load(), msg.Topic(),
+						msg.Payload(),
+					)
 
 					return
 				}
@@ -233,7 +287,7 @@ func NewWebSocket(caName, clientId, topic string) *WebSocket {
 
 		glog.Infof("Connected to broker over WebSocket")
 
-		init = false
+		init = false // init is complete and succeeding messages should be sent to the online message chan
 	}
 
 	opts.OnConnectionLost = onConnectionLost
