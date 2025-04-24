@@ -46,6 +46,7 @@
         }
 
         .offline-tagline {
+            font-style: italic;
             margin-bottom: 4px;
         }
 
@@ -69,9 +70,39 @@
 <script>
     const thread = document.getElementById('thread');
 
-    const offlineConfigSrc = new EventSource(`/offline-message/config`)
+    let ws = new WebSocket('ws://localhost:{{.Port}}/ws/config');
 
-    offlineConfigSrc.onmessage = (event) => {
+    function connectWebSocket() {
+        ws.onmessage = (event) => {
+            const container = document.createElement('div');
+            container.className = 'message';
+
+            const text = document.createElement('pre');
+            try {
+                const json = JSON.parse(event.data);
+                text.textContent = JSON.stringify(json, null, 2);
+            } catch {
+                text.textContent = event.data;
+            }
+
+            const timestamp = document.createElement('div');
+            timestamp.className = 'timestamp';
+            timestamp.textContent = new Date().toISOString();
+
+            container.appendChild(text);
+            container.appendChild(timestamp);
+            thread.appendChild(container);
+
+            // Scroll to bottom
+            thread.scrollTop = thread.scrollHeight;
+        };
+    }
+
+    connectWebSocket();
+
+    const offlineCfgSrc = new EventSource(`/offline-message/config`)
+
+    offlineCfgSrc.onmessage = (event) => {
         const container = document.createElement('div');
         container.className = 'offline-message';
 
@@ -95,43 +126,13 @@
         thread.scrollTop = thread.scrollHeight;
     };
 
-    const ws = new WebSocket('ws://localhost:{{.Port}}/ws/config');
-
-    ws.onmessage = (event) => {
-        const container = document.createElement('div');
-        container.className = 'message';
-
-        const text = document.createElement('pre');
-        try {
-            const json = JSON.parse(event.data);
-            text.textContent = JSON.stringify(json, null, 2);
-        } catch {
-            text.textContent = event.data;
+    offlineCfgSrc.onopen = () => {
+        // Reconnect the WebSocket connection if it was closed to resume online messages
+        if (ws.readyState === WebSocket.CLOSED) {
+            ws = new WebSocket('ws://localhost:{{.Port}}/ws/config');
+            connectWebSocket();
         }
-
-        const timestamp = document.createElement('div');
-        timestamp.className = 'timestamp';
-        timestamp.textContent = new Date().toISOString();
-
-        container.appendChild(text);
-        container.appendChild(timestamp);
-        thread.appendChild(container);
-
-        // Scroll to bottom
-        thread.scrollTop = thread.scrollHeight;
-    };
-
-    ws.onopen = () => {
-        console.log('Connected to WebSocket');
-    };
-
-    ws.onerror = (err) => {
-        console.error('WebSocket error:', err);
-    };
-
-    ws.onclose = () => {
-        console.log('WebSocket disconnected');
-    };
+    }
 </script>
 
 </body>

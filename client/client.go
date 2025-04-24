@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sync"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/google/uuid"
@@ -90,6 +91,7 @@ type WebSocketEvent struct {
 
 type SseEvent struct {
 	Writer http.ResponseWriter
+	Done   chan bool
 }
 
 type SseMessage struct {
@@ -106,7 +108,8 @@ type ConnEventWatcher struct {
 	WsConn        map[*websocket.Conn]bool
 	OnlineMessage chan []byte
 
-	SseMessages    map[uuid.UUID]SseMessage
+	SseEvent       chan SseEvent
+	SseMessages    sync.Map
 	OfflineMessage chan OfflineMessage
 }
 
@@ -114,7 +117,8 @@ func NewConnEventWatcher() *ConnEventWatcher {
 	w := &ConnEventWatcher{
 		WsConn:         make(map[*websocket.Conn]bool),
 		WsEvent:        make(chan WebSocketEvent),
-		SseMessages:    make(map[uuid.UUID]SseMessage),
+		SseEvent:       make(chan SseEvent),
+		SseMessages:    sync.Map{},
 		OnlineMessage:  make(chan []byte),
 		OfflineMessage: make(chan OfflineMessage),
 	}
@@ -148,10 +152,40 @@ func (w *ConnEventWatcher) run() {
 					glog.Error("WebSocket connection removed")
 				}
 			}
+		case event := <-w.SseEvent:
+			replayOfflineMessages(w, event)
+			event.Done <- true
 		case msg := <-w.OfflineMessage:
-			w.SseMessages[msg.Id] = SseMessage{msg.Payload}
+			w.SseMessages.Store(msg.Id, SseMessage{Data: msg.Payload})
 		}
 	}
+}
+
+func replayOfflineMessages(w *ConnEventWatcher, event SseEvent) {
+	iterate := func(k any, r bool) bool {
+		w.SseMessages.Delete(k)
+
+		return r
+	}
+
+	w.SseMessages.Range(
+		func(k, v any) bool {
+			msg, ok := v.(SseMessage)
+			if !ok {
+				glog.Errorf("Invalid data: %v", v)
+
+				return iterate(k, false)
+			}
+
+			if _, err := fmt.Fprintf(event.Writer, "data: %s\n\n", msg.Data); err != nil {
+				glog.Errorf("Failed to write message: %v", err)
+
+				return iterate(k, false)
+			}
+
+			return iterate(k, true)
+		},
+	)
 }
 
 type WebSocket struct {

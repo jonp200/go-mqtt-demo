@@ -87,14 +87,11 @@ func (h *Handler) SseConfig(c echo.Context) error {
 		return nil
 	}
 
-	for k, v := range h.cfgClient.SseMessages {
-		if _, err := fmt.Fprintf(c.Response().Writer, "data: %s\n\n", v.Data); err != nil {
-			glog.Errorf("Failed to write message: %v", err)
-		}
+	done := make(chan bool)
+	h.cfgClient.SseEvent <- client.SseEvent{Writer: c.Response().Writer, Done: done}
 
-		f.Flush()
-		delete(h.cfgClient.SseMessages, k)
-	}
+	<-done
+	f.Flush()
 
 	return nil
 }
