@@ -69,11 +69,12 @@ type ConnEventWatcher struct {
 
 func NewConnEventWatcher() *ConnEventWatcher {
 	w := &ConnEventWatcher{
-		WsConnections:  sync.Map{},
-		WsEvent:        make(chan WebSocketEvent),
-		SseEvent:       make(chan SseEvent),
+		WsConnections: sync.Map{},
+		WsEvent:       make(chan WebSocketEvent),
+		OnlineMessage: make(chan []byte),
+
 		SseMessages:    sync.Map{},
-		OnlineMessage:  make(chan []byte),
+		SseEvent:       make(chan SseEvent),
 		OfflineMessage: make(chan OfflineMessage),
 	}
 
@@ -271,7 +272,8 @@ func setTLSConfig(opts *mqtt.ClientOptions, caName string) {
 }
 
 func setAuth(clientId string, opts *mqtt.ClientOptions) {
-	opts.SetClientID(clientId + "_" + os.Getenv("CLIENT_ID_SUFFIX")) // client ID must be unique
+	// The resulting client ID must be unique, otherwise the broker will reject the connection
+	opts.SetClientID(clientId + "_" + os.Getenv("CLIENT_ID_SUFFIX"))
 	opts.SetUsername(os.Getenv("MQTT_USERNAME"))
 	opts.SetPassword(os.Getenv("MQTT_PASSWORD"))
 }
