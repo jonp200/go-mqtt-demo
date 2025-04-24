@@ -16,54 +16,6 @@ import (
 	glog "github.com/labstack/gommon/log"
 )
 
-func setTLSConfig(opts *mqtt.ClientOptions, caName string) {
-	certpool := x509.NewCertPool()
-	ca, err := os.ReadFile(caName)
-
-	if err != nil {
-		glog.Fatal(err.Error())
-	}
-
-	certpool.AppendCertsFromPEM(ca)
-	opts.SetTLSConfig(
-		&tls.Config{
-			RootCAs: certpool,
-		},
-	)
-}
-
-func setAuth(clientId string, opts *mqtt.ClientOptions) {
-	opts.SetClientID(clientId + "_" + os.Getenv("CLIENT_ID_SUFFIX")) // client ID must be unique
-	opts.SetUsername(os.Getenv("MQTT_USERNAME"))
-	opts.SetPassword(os.Getenv("MQTT_PASSWORD"))
-}
-
-func setCleanSession(opts *mqtt.ClientOptions) {
-	opts.CleanSession = os.Getenv("MQTT_CLEAN_SESSION") == "1"
-}
-
-func publishHandler(_ mqtt.Client, msg mqtt.Message) {
-	glog.Infof("Received from topic: %v\n>>\t%s", msg.Topic(), msg.Payload())
-}
-
-func onConnectAttempt(broker *url.URL, tlsCfg *tls.Config) *tls.Config {
-	glog.Infof("Connecting to broker %s...", broker.Host)
-
-	return tlsCfg
-}
-
-func onReconnecting(_ mqtt.Client, opts *mqtt.ClientOptions) {
-	glog.Infof("Reconnecting to broker %s...", opts.Servers)
-}
-
-func onConnect(_ mqtt.Client) {
-	glog.Info("Connected to broker")
-}
-
-func onConnectionLost(_ mqtt.Client, err error) {
-	glog.Infof("Connection to broker lost: %v", err)
-}
-
 type Mqtt struct {
 	mqtt.Client
 }
@@ -71,7 +23,7 @@ type Mqtt struct {
 func NewMqtt(caName, clientId string) *Mqtt {
 	opts := mqtt.NewClientOptions().
 		AddBroker(fmt.Sprintf("mqtts://%v:%v", os.Getenv("BROKER_ADDRESS"), os.Getenv("BROKER_PORT"))).
-		SetDefaultPublishHandler(publishHandler)
+		SetDefaultPublishHandler(defaultPublishHandler)
 
 	setTLSConfig(opts, caName)
 	setAuth(clientId, opts)
@@ -259,25 +211,7 @@ func NewWebSocket(caName, clientId, topic string) *WebSocket {
 		init := true
 		token := client.Subscribe(
 			topic, qos, func(_ mqtt.Client, msg mqtt.Message) {
-				// Send messages found upon init to the offline message chan
-				if init {
-					// MessageID() is always 0 and cannot be used as an ID. Maybe there's a config necessary?
-					offlineId.Add(1)
-
-					watcher.OfflineMessage <- OfflineMessage{
-						Id:      offlineId.Load(),
-						Payload: msg.Payload(),
-					}
-					glog.Infof(
-						"Message [%v] (while offline) from topic: %v\n>>\t%s", offlineId.Load(), msg.Topic(),
-						msg.Payload(),
-					)
-
-					return
-				}
-
-				glog.Infof("Received from topic: %v\n>>\t%s", msg.Topic(), msg.Payload())
-				watcher.OnlineMessage <- msg.Payload()
+				relayMessage(watcher, msg, &init, &offlineId)
 			},
 		)
 
@@ -296,4 +230,74 @@ func NewWebSocket(caName, clientId, topic string) *WebSocket {
 		Client:           mqtt.NewClient(opts),
 		ConnEventWatcher: watcher,
 	}
+}
+
+func relayMessage(watcher *ConnEventWatcher, msg mqtt.Message, init *bool, offlineId *atomic.Int64) {
+	// Send messages found upon init to the offline message chan
+	if *init {
+		// MessageID() is always 0 and cannot be used as an ID. Maybe there's a config necessary?
+		offlineId.Add(1)
+
+		watcher.OfflineMessage <- OfflineMessage{
+			Id:      offlineId.Load(),
+			Payload: msg.Payload(),
+		}
+		glog.Infof(
+			"Message [%v] (while offline) from topic: %v\n>>\t%s", offlineId.Load(), msg.Topic(),
+			msg.Payload(),
+		)
+
+		return
+	}
+
+	glog.Infof("Received from topic: %v\n>>\t%s", msg.Topic(), msg.Payload())
+	watcher.OnlineMessage <- msg.Payload()
+}
+
+func setTLSConfig(opts *mqtt.ClientOptions, caName string) {
+	certpool := x509.NewCertPool()
+	ca, err := os.ReadFile(caName)
+
+	if err != nil {
+		glog.Fatal(err.Error())
+	}
+
+	certpool.AppendCertsFromPEM(ca)
+	opts.SetTLSConfig(
+		&tls.Config{
+			RootCAs: certpool,
+		},
+	)
+}
+
+func setAuth(clientId string, opts *mqtt.ClientOptions) {
+	opts.SetClientID(clientId + "_" + os.Getenv("CLIENT_ID_SUFFIX")) // client ID must be unique
+	opts.SetUsername(os.Getenv("MQTT_USERNAME"))
+	opts.SetPassword(os.Getenv("MQTT_PASSWORD"))
+}
+
+func setCleanSession(opts *mqtt.ClientOptions) {
+	opts.CleanSession = os.Getenv("MQTT_CLEAN_SESSION") == "1"
+}
+
+func defaultPublishHandler(_ mqtt.Client, msg mqtt.Message) {
+	glog.Infof("Received from topic: %v\n>>\t%s", msg.Topic(), msg.Payload())
+}
+
+func onConnectAttempt(broker *url.URL, tlsCfg *tls.Config) *tls.Config {
+	glog.Infof("Connecting to broker %s...", broker.Host)
+
+	return tlsCfg
+}
+
+func onReconnecting(_ mqtt.Client, opts *mqtt.ClientOptions) {
+	glog.Infof("Reconnecting to broker %s...", opts.Servers)
+}
+
+func onConnect(_ mqtt.Client) {
+	glog.Info("Connected to broker")
+}
+
+func onConnectionLost(_ mqtt.Client, err error) {
+	glog.Infof("Connection to broker lost: %v", err)
 }
