@@ -93,7 +93,7 @@ func (c *Config) validateEmpty() error {
 
 func (c *Config) validateBrokerAddress() error {
 	if net.ParseIP(c.BrokerAddress) == nil && !isValidDomain(c.BrokerAddress) {
-		return errors.New("broker address must be a valid IP address or domain name")
+		return errors.New("broker address must be a valid ip address or domain name")
 	}
 
 	return nil
@@ -111,6 +111,25 @@ func isValidDomain(domain string) bool {
 	return match
 }
 
+const (
+	MinPort = 1
+	MaxPort = 65535
+)
+
+type PortError struct {
+	Port    string
+	Name    string
+	Wrapped error
+}
+
+func (e *PortError) Error() string {
+	return fmt.Sprintf("invalid %s port %q: %v", e.Name, e.Port, e.Wrapped)
+}
+
+func (e *PortError) Unwrap() error {
+	return e.Wrapped
+}
+
 func (c *Config) validatePorts() error {
 	ports := map[string]string{
 		"broker":    c.BrokerPort,
@@ -120,7 +139,11 @@ func (c *Config) validatePorts() error {
 
 	for name, port := range ports {
 		if err := validatePort(port); err != nil {
-			return fmt.Errorf("error on %s port: %w", name, err)
+			return &PortError{
+				Port:    port,
+				Name:    name,
+				Wrapped: err,
+			}
 		}
 	}
 
@@ -133,7 +156,7 @@ func validatePort(port string) error {
 		return fmt.Errorf("invalid port number: %w", err)
 	}
 
-	if num < 1 || num > 65535 {
+	if num < MinPort || num > MaxPort {
 		return fmt.Errorf("port number %d out of range (1-65535)", num)
 	}
 

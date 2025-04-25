@@ -35,15 +35,13 @@ func NewMqtt(caName, clientId string) (*Mqtt, error) {
 }
 
 func (m *Mqtt) Disconnect() {
-	glog.Infof("Disconnecting MQTT client...")
+	glog.Infof("disconnecting mqtt client...")
 
 	close(m.done)
 
 	if m.Client.IsConnected() {
-		const quiesce = 250
-
-		m.Client.Disconnect(quiesce)
+		m.Client.Disconnect(DefaultQuiesceTimeout)
 	}
 
-	glog.Infof("MQTT client disconnected")
+	glog.Infof("mqtt client disconnected")
 }

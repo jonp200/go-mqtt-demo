@@ -11,6 +11,11 @@ import (
 	glog "github.com/labstack/gommon/log"
 )
 
+const (
+	DefaultQuiesceTimeout = 250
+	DefaultBufferSize     = 256
+)
+
 func setTLSConfig(opts *mqtt.ClientOptions, caName string) (*tls.Config, error) {
 	certpool := x509.NewCertPool()
 
@@ -46,23 +51,23 @@ func setReconnect(opts *mqtt.ClientOptions) {
 }
 
 func defaultPublishHandler(_ mqtt.Client, msg mqtt.Message) {
-	glog.Infof("Received from topic: %v\n>>\t%s", msg.Topic(), msg.Payload())
+	glog.Infof("received from topic: %v\n>>\t%s", msg.Topic(), msg.Payload())
 }
 
 func onConnectAttempt(broker *url.URL, tlsCfg *tls.Config) *tls.Config {
-	glog.Infof("Connecting to broker %s...", broker.Host)
+	glog.Infof("connecting to broker %s...", broker.Host)
 
 	return tlsCfg
 }
 
 func onReconnecting(_ mqtt.Client, opts *mqtt.ClientOptions) {
-	glog.Infof("Reconnecting to broker %s...", opts.Servers)
+	glog.Infof("reconnecting to broker %s...", opts.Servers)
 }
 
 func onConnect(_ mqtt.Client) {
-	glog.Info("Connected to broker")
+	glog.Info("connected to broker")
 }
 
 func onConnectionLost(_ mqtt.Client, err error) {
-	glog.Infof("Connection to broker lost: %v", err)
+	glog.Infof("connection to broker lost: %v", err)
 }

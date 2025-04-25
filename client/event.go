@@ -43,18 +43,14 @@ type ConnEventWatcher struct {
 }
 
 func NewConnEventWatcher() *ConnEventWatcher {
-	const eventsBuffer = 10
-
-	const messageBuffer = 256
-
 	w := &ConnEventWatcher{
 		WsConnections: sync.Map{},
-		WsEvent:       make(chan WebSocketEvent, eventsBuffer),
-		OnlineMessage: make(chan []byte, messageBuffer),
+		WsEvent:       make(chan WebSocketEvent, DefaultBufferSize),
+		OnlineMessage: make(chan []byte, DefaultBufferSize),
 
 		SseMessages:    sync.Map{},
-		SseEvent:       make(chan SseEvent, eventsBuffer),
-		OfflineMessage: make(chan OfflineMessage, messageBuffer),
+		SseEvent:       make(chan SseEvent, DefaultBufferSize),
+		OfflineMessage: make(chan OfflineMessage, DefaultBufferSize),
 
 		done: make(chan struct{}),
 	}
@@ -65,6 +61,14 @@ func NewConnEventWatcher() *ConnEventWatcher {
 }
 
 func (w *ConnEventWatcher) Stop() {
+	w.WsConnections.Clear()
+	close(w.WsEvent)
+	close(w.OnlineMessage)
+
+	w.SseMessages.Clear()
+	close(w.SseEvent)
+	close(w.OfflineMessage)
+
 	close(w.done)
 }
 
@@ -77,10 +81,10 @@ func (w *ConnEventWatcher) run() {
 			switch event.Action {
 			case "add":
 				w.WsConnections.Store(event.Id, event.Conn)
-				glog.Info("WebSocket connection added")
+				glog.Info("websocket connection added")
 			case "remove":
 				w.WsConnections.Delete(event.Id)
-				glog.Info("WebSocket connection removed")
+				glog.Info("websocket connection removed")
 			}
 		case msg := <-w.OnlineMessage:
 			w.relayOnlineMessages(msg)
@@ -98,21 +102,21 @@ func (w *ConnEventWatcher) relayOnlineMessages(msg []byte) {
 		func(k, v any) bool {
 			conn, ok := v.(*websocket.Conn)
 			if !ok {
-				glog.Errorf("Invalid data: %v", v)
+				glog.Errorf("invalid data: %v", v)
 
 				w.WsConnections.Delete(k)
-				glog.Error("WebSocket connection removed")
+				glog.Error("websocket connection removed")
 
 				return false
 			}
 
 			if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-				glog.Errorf("Failed to send message: %v", err)
+				glog.Errorf("failed to send message: %v", err)
 
 				_ = conn.Close()
 
 				w.WsConnections.Delete(k)
-				glog.Error("WebSocket connection removed")
+				glog.Error("websocket connection removed")
 
 				return false
 			}
@@ -138,14 +142,14 @@ func (w *ConnEventWatcher) replayOfflineMessages(event SseEvent) {
 		func(k, v any) bool {
 			msg, ok := v.(SseMessage)
 			if !ok {
-				glog.Errorf("Invalid data: %v", v)
+				glog.Errorf("invalid data: %v", v)
 
 				return iterate(k, false)
 			}
 
 			key, ok := k.(int64)
 			if !ok {
-				glog.Errorf("Invalid key value: %v", k)
+				glog.Errorf("invalid key value: %v", k)
 
 				return iterate(k, false)
 			}
@@ -166,7 +170,7 @@ func (w *ConnEventWatcher) replayOfflineMessages(event SseEvent) {
 	// Use the key slice to process in order
 	for _, k := range keys {
 		if _, err := fmt.Fprintf(event.Writer, "data: %s\n\n", entries[k].Data); err != nil {
-			glog.Errorf("Failed to write message: %v", err)
+			glog.Errorf("failed to write message: %v", err)
 
 			break
 		}

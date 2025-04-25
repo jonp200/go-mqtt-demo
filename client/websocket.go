@@ -44,10 +44,10 @@ func NewWebSocket(caName, clientId, topic string) (*WebSocket, error) {
 		)
 
 		if err := token.Error(); token.Wait() && err != nil {
-			glog.Errorf("Subscribe error: %v", err)
+			glog.Errorf("subscribe error: %v", err)
 		}
 
-		glog.Infof("Connected to broker over WebSocket")
+		glog.Infof("connected to broker over websocket")
 
 		init = false // init is complete and succeeding messages should be sent to the online message chan
 	}
@@ -75,20 +75,18 @@ func relayMessage(watcher *ConnEventWatcher, msg mqtt.Message, init *bool, offli
 		return
 	}
 
-	glog.Infof("Received from topic: %v\n>>\t%s", msg.Topic(), msg.Payload())
+	glog.Infof("received from topic: %v\n>>\t%s", msg.Topic(), msg.Payload())
 	watcher.OnlineMessage <- msg.Payload()
 }
 
 func (ws *WebSocket) Disconnect() {
-	glog.Infof("Disconnecting WebSocket client...")
+	glog.Infof("disconnecting websocket client...")
 
 	ws.ConnEventWatcher.Stop()
 
 	if ws.Client.IsConnected() {
-		const quiesce = 250
-
-		ws.Client.Disconnect(quiesce)
+		ws.Client.Disconnect(DefaultQuiesceTimeout)
 	}
 
-	glog.Infof("WebSocket client disconnected")
+	glog.Infof("websocket client disconnected")
 }

@@ -97,7 +97,7 @@ func (h *Handler) SubscribeSse(c echo.Context) error {
 
 	f, ok := c.Response().Writer.(http.Flusher)
 	if !ok {
-		glog.Errorf("Failed to flush response stream: %v", c.Response().Writer)
+		glog.Errorf("failed to flush response stream: %v", c.Response().Writer)
 
 		return nil
 	}
@@ -116,7 +116,7 @@ func (h *Handler) SubscribeWs(c echo.Context) error {
 	conn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
 
 	if err != nil {
-		glog.Errorf("WebSocket upgrade failed: %v", err)
+		glog.Errorf("websocket upgrade failed: %v", err)
 
 		return err
 	}
