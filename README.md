@@ -1,5 +1,51 @@
 # MQTT demo with Go
 
+## Architecture
+
+### Configuration messages
+
+```mermaid
+graph TD
+    MQTT[MQTT Broker]
+    AdminClient[Admin Client]
+    AdminManagerUI[Admin Manager UI]
+    KioskClient[Kiosk Client]
+    KioskUI[Kiosk UI]
+
+    subgraph Admin Manager Interface
+        AdminManagerUI -->|Sends config to| AdminClient
+        AdminClient -->|Publishes config to|MQTT
+    end
+
+    subgraph Kiosk Web Interface
+        MQTT -->|Forwards config to| KioskClient
+        KioskUI -->|Requests config from| KioskClient
+        KioskClient -->|Returns config to| KioskUI
+    end
+```
+
+### Sensor messages
+
+```mermaid
+graph TD
+    MQTT2[MQTT Broker]
+    AdminClient2[Admin Client]
+    AdminMonitorUI[Admin Monitor UI]
+    KioskClient2[Kiosk Client]
+    KioskUI2[Kiosk UI]
+
+    subgraph Kiosk Web Interface
+        KioskUI2 -->|Sends sensors to| KioskClient2
+        KioskClient2 -->|Publishes sensors to|MQTT2
+    end
+
+    subgraph Admin Monitor Interface
+        MQTT2 -->|Forwards sensors to| AdminClient2
+        AdminMonitorUI -->|Requests sensors from| AdminClient2
+        AdminClient2 -->|Returns sensors to| AdminMonitorUI
+    end
+```
+
 ## Environment variables
 
 | Key                           | Description                              |
