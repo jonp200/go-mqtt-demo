@@ -17,11 +17,18 @@ type Handler struct {
 	ws   *client.WebSocket
 }
 
-func New(ca, pubClientId, subClientId, subTopic string) *Handler {
-	return &Handler{
-		mqtt: client.NewMqtt(ca, pubClientId),
-		ws:   client.NewWebSocket(ca, subClientId, subTopic),
+func New(ca, pubClientId, subClientId, subTopic string) (*Handler, error) {
+	pub, err := client.NewMqtt(ca, pubClientId)
+	if err != nil {
+		return nil, err
 	}
+
+	sub, err := client.NewWebSocket(ca, subClientId, subTopic)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Handler{mqtt: pub, ws: sub}, nil
 }
 
 func (h *Handler) Connect() error {
@@ -52,6 +59,7 @@ func (h *Handler) Disconnect(delay uint) {
 
 	go func() {
 		defer wg.Done()
+		h.ws.ConnEventWatcher.Stop()
 		h.ws.Disconnect(delay)
 	}()
 

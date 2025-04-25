@@ -10,6 +10,7 @@ import (
 	"sort"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/gorilla/websocket"
@@ -20,21 +21,25 @@ type Mqtt struct {
 	mqtt.Client
 }
 
-func NewMqtt(caName, clientId string) *Mqtt {
+func NewMqtt(caName, clientId string) (*Mqtt, error) {
 	opts := mqtt.NewClientOptions().
 		AddBroker(fmt.Sprintf("mqtts://%v:%v", os.Getenv("BROKER_ADDRESS"), os.Getenv("BROKER_PORT"))).
 		SetDefaultPublishHandler(defaultPublishHandler)
 
-	setTLSConfig(opts, caName)
+	if err := setTLSConfig(opts, caName); err != nil {
+		return nil, err
+	}
+
 	setAuth(clientId, opts)
 	setCleanSession(opts)
+	setReconnect(opts)
 
 	opts.OnConnectAttempt = onConnectAttempt
 	opts.OnReconnecting = onReconnecting
 	opts.OnConnect = onConnect
 	opts.OnConnectionLost = onConnectionLost
 
-	return &Mqtt{mqtt.NewClient(opts)}
+	return &Mqtt{mqtt.NewClient(opts)}, nil
 }
 
 type WebSocketEvent struct {
@@ -65,17 +70,25 @@ type ConnEventWatcher struct {
 	SseEvent       chan SseEvent
 	SseMessages    sync.Map
 	OfflineMessage chan OfflineMessage
+
+	done chan struct{}
 }
 
 func NewConnEventWatcher() *ConnEventWatcher {
+	const eventsBuffer = 10
+
+	const messageBuffer = 256
+
 	w := &ConnEventWatcher{
 		WsConnections: sync.Map{},
-		WsEvent:       make(chan WebSocketEvent),
-		OnlineMessage: make(chan []byte),
+		WsEvent:       make(chan WebSocketEvent, eventsBuffer),
+		OnlineMessage: make(chan []byte, messageBuffer),
 
 		SseMessages:    sync.Map{},
-		SseEvent:       make(chan SseEvent),
-		OfflineMessage: make(chan OfflineMessage),
+		SseEvent:       make(chan SseEvent, eventsBuffer),
+		OfflineMessage: make(chan OfflineMessage, messageBuffer),
+
+		done: make(chan struct{}),
 	}
 
 	go w.run()
@@ -83,9 +96,15 @@ func NewConnEventWatcher() *ConnEventWatcher {
 	return w
 }
 
+func (w *ConnEventWatcher) Stop() {
+	close(w.done)
+}
+
 func (w *ConnEventWatcher) run() {
 	for {
 		select {
+		case <-w.done:
+			return
 		case event := <-w.WsEvent:
 			switch event.Action {
 			case "add":
@@ -96,17 +115,16 @@ func (w *ConnEventWatcher) run() {
 				glog.Info("WebSocket connection removed")
 			}
 		case msg := <-w.OnlineMessage:
-			relayOnlineMessages(w, msg)
+			w.relayOnlineMessages(msg)
 		case event := <-w.SseEvent:
-			replayOfflineMessages(w, event)
-			event.Done <- true
+			w.replayOfflineMessages(event)
 		case msg := <-w.OfflineMessage:
 			w.SseMessages.Store(msg.Id, SseMessage{Data: msg.Payload})
 		}
 	}
 }
 
-func relayOnlineMessages(w *ConnEventWatcher, msg []byte) {
+func (w *ConnEventWatcher) relayOnlineMessages(msg []byte) {
 	// WebSocket connections order does not matter, so we can iterate over the map without sorting the connections
 	w.WsConnections.Range(
 		func(k, v any) bool {
@@ -136,7 +154,7 @@ func relayOnlineMessages(w *ConnEventWatcher, msg []byte) {
 	)
 }
 
-func replayOfflineMessages(w *ConnEventWatcher, event SseEvent) {
+func (w *ConnEventWatcher) replayOfflineMessages(event SseEvent) {
 	iterate := func(k any, r bool) bool {
 		w.SseMessages.Delete(k)
 
@@ -185,6 +203,8 @@ func replayOfflineMessages(w *ConnEventWatcher, event SseEvent) {
 			break
 		}
 	}
+
+	event.Done <- true
 }
 
 type WebSocket struct {
@@ -192,26 +212,31 @@ type WebSocket struct {
 	*ConnEventWatcher
 }
 
-func NewWebSocket(caName, clientId, topic string) *WebSocket {
+// WsQos is the QoS when subscribing. Preferred to use QoS level 1 when subscribing.
+const WsQos = 1
+
+func NewWebSocket(caName, clientId, topic string) (*WebSocket, error) {
 	opts := mqtt.NewClientOptions().
 		AddBroker(fmt.Sprintf("wss://%v:%v/mqtt", os.Getenv("BROKER_ADDRESS"), os.Getenv("BROKER_WS_PORT")))
 
-	setTLSConfig(opts, caName)
+	if err := setTLSConfig(opts, caName); err != nil {
+		return nil, err
+	}
+
 	setAuth(clientId, opts)
 	setCleanSession(opts)
+	setReconnect(opts)
 
 	opts.OnConnectAttempt = onConnectAttempt
 	opts.OnReconnecting = onReconnecting
 
 	watcher := NewConnEventWatcher()
 	opts.OnConnect = func(client mqtt.Client) {
-		const qos = 1 // preferred to use QOS 1 when subscribing
-
 		var offlineId atomic.Int64
 
 		init := true
 		token := client.Subscribe(
-			topic, qos, func(_ mqtt.Client, msg mqtt.Message) {
+			topic, WsQos, func(_ mqtt.Client, msg mqtt.Message) {
 				relayMessage(watcher, msg, &init, &offlineId)
 			},
 		)
@@ -227,10 +252,7 @@ func NewWebSocket(caName, clientId, topic string) *WebSocket {
 
 	opts.OnConnectionLost = onConnectionLost
 
-	return &WebSocket{
-		Client:           mqtt.NewClient(opts),
-		ConnEventWatcher: watcher,
-	}
+	return &WebSocket{Client: mqtt.NewClient(opts), ConnEventWatcher: watcher}, nil
 }
 
 func relayMessage(watcher *ConnEventWatcher, msg mqtt.Message, init *bool, offlineId *atomic.Int64) {
@@ -255,12 +277,12 @@ func relayMessage(watcher *ConnEventWatcher, msg mqtt.Message, init *bool, offli
 	watcher.OnlineMessage <- msg.Payload()
 }
 
-func setTLSConfig(opts *mqtt.ClientOptions, caName string) {
+func setTLSConfig(opts *mqtt.ClientOptions, caName string) error {
 	certpool := x509.NewCertPool()
-	ca, err := os.ReadFile(caName)
 
+	ca, err := os.ReadFile(caName)
 	if err != nil {
-		glog.Fatal(err.Error())
+		return err
 	}
 
 	certpool.AppendCertsFromPEM(ca)
@@ -269,6 +291,8 @@ func setTLSConfig(opts *mqtt.ClientOptions, caName string) {
 			RootCAs: certpool,
 		},
 	)
+
+	return nil
 }
 
 func setAuth(clientId string, opts *mqtt.ClientOptions) {
@@ -280,6 +304,13 @@ func setAuth(clientId string, opts *mqtt.ClientOptions) {
 
 func setCleanSession(opts *mqtt.ClientOptions) {
 	opts.CleanSession = os.Getenv("MQTT_CLEAN_SESSION") == "1"
+}
+
+func setReconnect(opts *mqtt.ClientOptions) {
+	opts.SetAutoReconnect(true)
+
+	maxReconnectInterval, _ := time.ParseDuration(os.Getenv("MQTT_MAX_RECONNECT_INTERVAL"))
+	opts.SetMaxReconnectInterval(maxReconnectInterval)
 }
 
 func defaultPublishHandler(_ mqtt.Client, msg mqtt.Message) {

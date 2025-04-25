@@ -10,6 +10,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
 	glog "github.com/labstack/gommon/log"
+	"go-mqtt-demo/config"
 	"go-mqtt-demo/handler"
 	tmpl "go-mqtt-demo/html/template"
 	"go-mqtt-demo/logger"
@@ -23,16 +24,22 @@ func main() {
 	logger.Init()
 
 	e := echo.New()
-	port := os.Getenv("SERVICE_PORT")
-	locId := os.Getenv("LOCATION_ID")
-	kioskId := os.Getenv("KIOSK_ID")
 
-	frontend(e, port, locId, kioskId)
+	cfg, err := config.New()
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	frontend(e, cfg)
 
 	const ca = "emqxsl-ca.crt"
 
-	subTopic := fmt.Sprintf("location/%v/kiosk/config", locId)
-	h := handler.New(ca, "pub_sensor_client", "sub_cfg_client", subTopic)
+	subTopic := fmt.Sprintf("location/%v/kiosk/config", cfg.LocationId)
+
+	h, err := handler.New(ca, "pub_sensor_client", "sub_cfg_client", subTopic)
+	if err != nil {
+		glog.Fatal(err)
+	}
 
 	if err := h.Connect(); err != nil {
 		glog.Fatal(err)
@@ -45,19 +52,19 @@ func main() {
 
 	handleShutdown(h)
 
-	e.Logger.Fatal(e.Start(":" + port))
+	e.Logger.Fatal(e.Start(":" + cfg.ServicePort))
 }
 
-func frontend(e *echo.Echo, port, locId, kioskId string) {
+func frontend(e *echo.Echo, cfg *config.Config) {
 	e.Renderer = tmpl.Renderer{Template: template.Must(template.ParseGlob("web/*.html"))}
 
 	e.File("/favicon.ico", "images/favicon.ico")
 	e.GET(
 		"/pub", func(c echo.Context) error {
 			data := map[string]interface{}{
-				"Port":    port,
-				"LocId":   locId,
-				"KioskId": kioskId,
+				"Port":    cfg.ServicePort,
+				"LocId":   cfg.LocationId,
+				"KioskId": cfg.KioskId,
 			}
 
 			return c.Render(http.StatusOK, "pub.html", data)
@@ -66,7 +73,7 @@ func frontend(e *echo.Echo, port, locId, kioskId string) {
 	e.GET(
 		"/sub", func(c echo.Context) error {
 			data := map[string]interface{}{
-				"Port": port,
+				"Port": cfg.ServicePort,
 			}
 
 			return c.Render(http.StatusOK, "sub.html", data)
