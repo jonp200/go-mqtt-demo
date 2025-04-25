@@ -43,9 +43,7 @@ func (h *Handler) Connect() error {
 	return nil
 }
 
-func (h *Handler) Disconnect(delay uint) {
-	glog.Infof("Disconnecting clients...")
-
+func (h *Handler) Disconnect() {
 	const tasks = 2
 
 	var wg sync.WaitGroup
@@ -54,17 +52,15 @@ func (h *Handler) Disconnect(delay uint) {
 
 	go func() {
 		defer wg.Done()
-		h.mqtt.Disconnect(delay)
+		h.mqtt.Disconnect()
 	}()
 
 	go func() {
 		defer wg.Done()
-		h.ws.ConnEventWatcher.Stop()
-		h.ws.Disconnect(delay)
+		h.ws.Disconnect()
 	}()
 
 	wg.Wait()
-	glog.Infof("Clients disconnected")
 }
 
 func (h *Handler) Publish(c echo.Context) error {

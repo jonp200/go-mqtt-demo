@@ -88,9 +88,7 @@ func handleShutdown(h *handler.Handler) {
 	go func() {
 		<-sig
 
-		const delay = 250
-
-		h.Disconnect(delay)
+		h.Disconnect()
 		os.Exit(0)
 	}()
 }

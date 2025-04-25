@@ -5,10 +5,12 @@ import (
 	"os"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
+	glog "github.com/labstack/gommon/log"
 )
 
 type Mqtt struct {
 	mqtt.Client
+	done chan struct{}
 }
 
 func NewMqtt(caName, clientId string) (*Mqtt, error) {
@@ -29,5 +31,19 @@ func NewMqtt(caName, clientId string) (*Mqtt, error) {
 	opts.OnConnect = onConnect
 	opts.OnConnectionLost = onConnectionLost
 
-	return &Mqtt{mqtt.NewClient(opts)}, nil
+	return &Mqtt{Client: mqtt.NewClient(opts), done: make(chan struct{})}, nil
+}
+
+func (m *Mqtt) Disconnect() {
+	glog.Infof("Disconnecting MQTT client...")
+
+	close(m.done)
+
+	if m.Client.IsConnected() {
+		const quiesce = 250
+
+		m.Client.Disconnect(quiesce)
+	}
+
+	glog.Infof("MQTT client disconnected")
 }

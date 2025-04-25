@@ -56,15 +56,11 @@ func (c *Config) Validate() error {
 		return err
 	}
 
-	if net.ParseIP(c.BrokerAddress) == nil && !isValidDomain(c.BrokerAddress) {
-		return errors.New("broker address must be a valid IP address or domain name")
+	if err := c.validateBrokerAddress(); err != nil {
+		return err
 	}
 
-	if _, err := strconv.ParseInt(c.BrokerPort, 10, 64); err != nil {
-		return errors.New("broker port must be a number")
-	}
-
-	return nil
+	return c.validatePorts()
 }
 
 func (c *Config) validateEmpty() error {
@@ -95,6 +91,14 @@ func (c *Config) validateEmpty() error {
 	return nil
 }
 
+func (c *Config) validateBrokerAddress() error {
+	if net.ParseIP(c.BrokerAddress) == nil && !isValidDomain(c.BrokerAddress) {
+		return errors.New("broker address must be a valid IP address or domain name")
+	}
+
+	return nil
+}
+
 func isValidDomain(domain string) bool {
 	// Regular expression to validate domain name
 	regex := `^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$`
@@ -105,4 +109,33 @@ func isValidDomain(domain string) bool {
 	}
 
 	return match
+}
+
+func (c *Config) validatePorts() error {
+	ports := map[string]string{
+		"broker":    c.BrokerPort,
+		"websocket": c.BrokerWSPort,
+		"service":   c.ServicePort,
+	}
+
+	for name, port := range ports {
+		if err := validatePort(port); err != nil {
+			return fmt.Errorf("error on %s port: %w", name, err)
+		}
+	}
+
+	return nil
+}
+
+func validatePort(port string) error {
+	num, err := strconv.ParseInt(port, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid port number: %w", err)
+	}
+
+	if num < 1 || num > 65535 {
+		return fmt.Errorf("port number %d out of range (1-65535)", num)
+	}
+
+	return nil
 }

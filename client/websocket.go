@@ -78,3 +78,17 @@ func relayMessage(watcher *ConnEventWatcher, msg mqtt.Message, init *bool, offli
 	glog.Infof("Received from topic: %v\n>>\t%s", msg.Topic(), msg.Payload())
 	watcher.OnlineMessage <- msg.Payload()
 }
+
+func (ws *WebSocket) Disconnect() {
+	glog.Infof("Disconnecting WebSocket client...")
+
+	ws.ConnEventWatcher.Stop()
+
+	if ws.Client.IsConnected() {
+		const quiesce = 250
+
+		ws.Client.Disconnect(quiesce)
+	}
+
+	glog.Infof("WebSocket client disconnected")
+}
