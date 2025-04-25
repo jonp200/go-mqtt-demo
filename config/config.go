@@ -3,7 +3,10 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
+	"regexp"
+	"strconv"
 	"time"
 )
 
@@ -49,6 +52,22 @@ func New() (*Config, error) {
 }
 
 func (c *Config) Validate() error {
+	if err := c.validateEmpty(); err != nil {
+		return err
+	}
+
+	if net.ParseIP(c.BrokerAddress) == nil && !isValidDomain(c.BrokerAddress) {
+		return errors.New("broker address must be a valid IP address or domain name")
+	}
+
+	if _, err := strconv.ParseInt(c.BrokerPort, 10, 64); err != nil {
+		return errors.New("broker port must be a number")
+	}
+
+	return nil
+}
+
+func (c *Config) validateEmpty() error {
 	if c.BrokerAddress == "" {
 		return errors.New("broker address is required")
 	}
@@ -74,4 +93,16 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+func isValidDomain(domain string) bool {
+	// Regular expression to validate domain name
+	regex := `^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$`
+
+	match, err := regexp.MatchString(regex, domain)
+	if err != nil {
+		return false
+	}
+
+	return match
 }
