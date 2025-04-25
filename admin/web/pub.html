@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Kiosk MQTT publisher</title>
+    <title>Admin MQTT publisher</title>
     <style>
         body {
             font-family: sans-serif;
@@ -69,11 +69,11 @@
 <body>
 
 <div class="container">
-    <h2>📤 Kiosk MQTT publisher</h2>
+    <h2>📤 Admin MQTT publisher</h2>
     <label for="topic">Topic</label>
-    <input type="text" id="topic" value="location/{{.LocId}}/kiosk/{{.KioskId}}/sensor/1" readonly/>
+    <input type="text" id="topic" value="location/{{.LocId}}/kiosk/config" readonly/>
     <label for="payload">JSON Payload</label>
-    <textarea id="payload" placeholder='Enter JSON payload (e.g. {"sensor1":true})'></textarea>
+    <textarea id="payload" placeholder='Enter JSON payload (e.g. {"enabled":true})'></textarea>
     <button onclick="publish()">Publish</button>
 </div>
 
@@ -81,6 +81,7 @@
 
 <script>
     async function publish() {
+        const topic = document.getElementById("topic").value.trim();
         const payload = document.getElementById("payload").value.trim();
 
         if (!payload) {
@@ -91,10 +92,11 @@
         try {
             const parsed = JSON.parse(payload); // validate JSON
 
-            const res = await fetch('http://localhost:{{.Port}}/sensor1', {
+            const res = await fetch('http://localhost:{{.Port}}/config', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
+                    topic,
                     data: parsed
                 }),
             });

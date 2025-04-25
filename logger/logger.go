@@ -87,6 +87,7 @@ func Init() {
 
 	if os.Getenv("DEBUG") == "1" {
 		glog.SetLevel(glog.DEBUG)
+
 		mqtt.DEBUG = Debug{}
 	}
 }

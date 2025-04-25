@@ -2,9 +2,7 @@ package handler
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
@@ -15,31 +13,27 @@ import (
 )
 
 type Handler struct {
-	cfgClient     *client.Mqtt
-	sensorsClient *client.WebSocket
-	locId         string
+	mqtt *client.Mqtt
+	ws   *client.WebSocket
 }
 
-func New(ca, cfgClientId, sensorClientId string) *Handler {
-	locId := os.Getenv("LOCATION_ID")
-	cfgClient := client.NewMqtt(ca, cfgClientId)
-
-	if token := cfgClient.Connect(); token.Wait() && token.Error() != nil {
-		glog.Fatal(token.Error())
-	}
-
-	topic := fmt.Sprintf("location/%v/kiosk/+/sensor/#", locId)
-	sensorsClient := client.NewWebSocket(ca, sensorClientId, topic)
-
-	if token := sensorsClient.Connect(); token.Wait() && token.Error() != nil {
-		glog.Fatal(token.Error())
-	}
-
+func New(ca, pubClientId, subClientId, subTopic string) *Handler {
 	return &Handler{
-		cfgClient:     cfgClient,
-		sensorsClient: sensorsClient,
-		locId:         locId,
+		mqtt: client.NewMqtt(ca, pubClientId),
+		ws:   client.NewWebSocket(ca, subClientId, subTopic),
 	}
+}
+
+func (h *Handler) Connect() error {
+	if token := h.mqtt.Connect(); token.Wait() && token.Error() != nil {
+		return token.Error()
+	}
+
+	if token := h.ws.Connect(); token.Wait() && token.Error() != nil {
+		return token.Error()
+	}
+
+	return nil
 }
 
 func (h *Handler) Disconnect(delay uint) {
@@ -53,22 +47,22 @@ func (h *Handler) Disconnect(delay uint) {
 
 	go func() {
 		defer wg.Done()
-		h.cfgClient.Disconnect(delay)
+		h.mqtt.Disconnect(delay)
 	}()
 
 	go func() {
 		defer wg.Done()
-		h.sensorsClient.Disconnect(delay)
+		h.ws.Disconnect(delay)
 	}()
 
 	wg.Wait()
 	glog.Infof("Clients disconnected")
 }
 
-// Config handles the publishing of kiosk config to the location.
-func (h *Handler) Config(c echo.Context) error {
+func (h *Handler) Publish(c echo.Context) error {
 	var p struct {
-		Data any `json:"data"`
+		Topic string `json:"topic"`
+		Data  any    `json:"data"`
 	}
 
 	if err := c.Bind(&p); err != nil {
@@ -81,10 +75,7 @@ func (h *Handler) Config(c echo.Context) error {
 	}
 
 	const qos = 0
-
-	topic := fmt.Sprintf("location/%v/kiosk/config", h.locId)
-
-	if token := h.cfgClient.Publish(topic, qos, false, data); token.Wait() && token.Error() != nil {
+	if token := h.mqtt.Publish(p.Topic, qos, false, data); token.Wait() && token.Error() != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
@@ -95,8 +86,7 @@ func (h *Handler) Config(c echo.Context) error {
 	)
 }
 
-// SseSensors handles the sending of sensor messages received while the service was offline.
-func (h *Handler) SseSensors(c echo.Context) error {
+func (h *Handler) SubscribeSse(c echo.Context) error {
 	c.Response().Header().Set("Content-Type", "text/event-stream")
 	c.Response().Header().Set("Cache-Control", "no-cache")
 	c.Response().Header().Set("Connection", "keep-alive")
@@ -109,7 +99,7 @@ func (h *Handler) SseSensors(c echo.Context) error {
 	}
 
 	done := make(chan bool)
-	h.sensorsClient.SseEvent <- client.SseEvent{Writer: c.Response().Writer, Done: done}
+	h.ws.SseEvent <- client.SseEvent{Writer: c.Response().Writer, Done: done}
 
 	<-done
 	f.Flush()
@@ -117,8 +107,7 @@ func (h *Handler) SseSensors(c echo.Context) error {
 	return nil
 }
 
-// WsSensors handles the subscription to all kiosks' sensors in the location.
-func (h *Handler) WsSensors(c echo.Context) error {
+func (h *Handler) SubscribeWs(c echo.Context) error {
 	upgrader := websocket.Upgrader{}
 	conn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
 
@@ -131,11 +120,11 @@ func (h *Handler) WsSensors(c echo.Context) error {
 	defer conn.Close()
 
 	eventId := time.Now().UnixNano()
-	h.sensorsClient.WsEvent <- client.WebSocketEvent{Id: eventId, Conn: conn, Action: "add"}
+	h.ws.WsEvent <- client.WebSocketEvent{Id: eventId, Conn: conn, Action: "add"}
 
 	for {
 		if _, _, err = conn.ReadMessage(); err != nil {
-			h.sensorsClient.WsEvent <- client.WebSocketEvent{Id: eventId, Conn: conn, Action: "remove"}
+			h.ws.WsEvent <- client.WebSocketEvent{Id: eventId, Conn: conn, Action: "remove"}
 
 			break
 		}

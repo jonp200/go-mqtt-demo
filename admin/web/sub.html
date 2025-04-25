@@ -100,7 +100,7 @@
 
     connectWebSocket();
 
-    const offlineSensorsSrc = new EventSource(`/offline-message/sensors`)
+    const offlineSensorsSrc = new EventSource(`/sse/sensors`)
 
     offlineSensorsSrc.onmessage = (event) => {
         const container = document.createElement('div');

@@ -100,7 +100,7 @@
 
     connectWebSocket();
 
-    const offlineCfgSrc = new EventSource(`/offline-message/config`)
+    const offlineCfgSrc = new EventSource(`/sse/config`)
 
     offlineCfgSrc.onmessage = (event) => {
         const container = document.createElement('div');
