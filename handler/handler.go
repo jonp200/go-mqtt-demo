@@ -1,3 +1,7 @@
+// Copyright 2025 Jon Perada. All rights reserved.
+// Use of this source code is governed by an MIT-style
+// license that can be found in the LICENSE file.
+
 package handler
 
 import (
@@ -63,6 +67,14 @@ func (h *Handler) Disconnect() {
 	wg.Wait()
 }
 
+const (
+	// PubQos is the QoS when publishing. Preferred to use QoS level 0 when publishing.
+	PubQos = 1
+
+	// MsgRetained identifies when to retain a published message.
+	MsgRetained = false
+)
+
 func (h *Handler) Publish(c echo.Context) error {
 	var p struct {
 		Topic string `json:"topic"`
@@ -78,8 +90,7 @@ func (h *Handler) Publish(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
-	const qos = 0
-	if token := h.mqtt.Publish(p.Topic, qos, false, data); token.Wait() && token.Error() != nil {
+	if token := h.mqtt.Publish(p.Topic, PubQos, MsgRetained, data); token.Wait() && token.Error() != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 

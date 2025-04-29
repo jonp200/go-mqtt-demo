@@ -52,6 +52,15 @@
             background-color: #45a049;
         }
 
+        .copyright {
+            border-top: 1px solid #ddd;
+            margin-top: 20px;
+            padding-top: 20px;
+            font-size: 0.8em;
+            color: #888;
+            text-align: center;
+        }
+
         #toast {
             position: fixed;
             bottom: 20px;
@@ -75,6 +84,11 @@
     <label for="payload">JSON Payload</label>
     <textarea id="payload" placeholder='Enter JSON payload (e.g. {"sensor1":true})'></textarea>
     <button onclick="publish()">Publish</button>
+    <p class="copyright">
+        Copyright 2025 Jon Perada.
+        All rights reserved.
+        Use of this source code is governed by an MIT-style license that can be found in the LICENSE file.
+    </p>
 </div>
 
 <div id="toast"></div>
